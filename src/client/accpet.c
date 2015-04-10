@@ -1,3 +1,11 @@
+/*
+   1. 接收server的命令处理，（根据命令启动定时处理任务）
+
+   2. 得到流保存到buffer
+
+   3. 从buffer中开发写入pcm buffer中
+*/
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <string.h>
@@ -10,12 +18,11 @@
 #include <sys/stat.h>
 #include <sys/fcntl.h> 
 #include <alsa/asoundlib.h> 
+#include <pthread.h>
+
 #include "../lib/list.h"
 
-
-#define OK_STR "OK"
-
-#define HOST_IP "0.0.0.0"
+#define GROUP_IP "225.0.0.37"
 #define PORT 8883
 
 #define MAX_SIZE 1024
@@ -74,7 +81,7 @@ void write_to_buffer(unsigned char *buffer){
 
 void *listent_socket()
 {
-        int g_running = 1;
+    int g_running = 1;
 	int sockfd;
 	struct sockaddr_in servaddr;
 	
@@ -89,10 +96,8 @@ void *listent_socket()
         exit(1);  
     }  
 
-
-//close hsa_syslogd release 18879 port
+    //close hsa_syslogd release 18879 port
     ///* allow multiple sockets to use the same PORT number */ 
-
     bzero(&servaddr, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
 
@@ -113,7 +118,6 @@ void *listent_socket()
         exit(1);  
     }  
     int length;
-    int i=0;
     while(1){
         bzero(buffer, MAX_SIZE);
         length = recvfrom(sockfd, buffer, MAX_SIZE, 0,(struct sockaddr *) &servaddr, &socklen);
@@ -125,11 +129,7 @@ void *listent_socket()
             write_to_buffer(buffer);
             printf("length = %d\n",length);
         }
-        i++;
-        printf("i=%d\n",i);
-        sendto(sockfd, OK_STR, strlen(OK_STR)+1, 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
      }
-     close(sockfd);
 }
 
 int main(int argc,char *argv[]){

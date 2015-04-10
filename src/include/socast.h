@@ -6,17 +6,7 @@
 #define _SOCAST_INCLUDE_
 
 #include <stdio.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <netinet/in.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/fcntl.h>
-#include <sys/timeb.h>
-#include <pthread.h>
+
 #include "list.h"
 
 
@@ -26,13 +16,13 @@
 
 #define MAX_INDEX 65535*10
 
-#define MAX_FRAMES 1024
+#define MAX_FRAMES 512
 
 
 typedef struct so_play_frame_
 {
 	long long timestamp;
-	unsigned char *frames;
+	unsigned char frames[MAX_FRAMES];
 	/* data */
 } so_play_frame;
 
