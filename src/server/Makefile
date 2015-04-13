@@ -5,7 +5,7 @@ INCLUDES=-I/usr/include -I../include -I../lib
 #APR_CFG=$(apr-1-config --cflags --cppflags --includes --link-ld)
 
 #SOCAST_LDFLAGS=-lpthread -rdynamic -ldl
-SOCAST_LDFLAGS=-pthread
+SOCAST_LDFLAGS=-pthread -lasound
 
 CC=gcc
 
