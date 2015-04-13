@@ -5,10 +5,14 @@
 #include <string.h>
 #include <unistd.h>
 #include <netinet/in.h>
-#include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/fcntl.h>
 #include <sys/timeb.h>
+
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
+
 #include <pthread.h>
 #include <alsa/asoundlib.h> 
 #include "socast.h"
@@ -18,6 +22,8 @@
 #define PORT 8883
 
 #define MAX_SIZE 128
+
+#define TIMEOUT 50000  //50 ms
 
 
 #define RATE 44100
@@ -42,13 +48,23 @@ list_t *FRAME_LIST;
 int is_write_to_pcm=0;
 
 
+long long getSystemTime() {
+    struct timeb t;
+    ftime(&t);
+    return 1000 * t.time + t.millitm;
+}
 
-
+/**
+   关闭pcm
+*/
 void close_playback(){
     snd_pcm_drain(handle); 
     snd_pcm_close(handle);
 }
 
+/**
+   初始化 pcm 
+*/
 void init_playback(){
     int err;
 
@@ -71,13 +87,16 @@ void init_playback(){
     frames = MAX_FRAMES/4;
 }
 
+/**
+   向pcm缓存中写数据
+*/
 void write_to_buffer(unsigned char *buffer){
     int ret;
     while ((ret = snd_pcm_writei(handle, buffer, frames)) < 0) {
           snd_pcm_prepare(handle);
           fprintf(stderr, "<<<<<<<<<<<<<<< Buffer Underrun >>>>>>>>>>>>>>>\n");
     }
-    printf("Test ret:%d, frames %d\n",ret,frames);
+    // printf("Test ret:%d, frames %d\n",ret,frames);
 }
 
 /*
@@ -85,37 +104,35 @@ void write_to_buffer(unsigned char *buffer){
 Thread3. 从FRAME_LIST中获取数据写入到pcm中 
 */
 void *write_pcm(void *msg){
-    // init_playback();
+    init_playback();
     int index = 0;
-    list_iterator_t *it = list_iterator_new(FRAME_LIST, LIST_HEAD);
-  int tindex=0;
-  for(tindex=0;tindex<FRAME_LIST->len;tindex++){
-     list_node_t *a = list_iterator_next(it);
-    so_play_frame *data = (so_play_frame *)a->val;
-    printf("timestamp = %lld frames len = %lu \n frame = %s\n",data->timestamp,sizeof(data->frames),data->frames);
-}
-
-    // while(is_write_to_pcm){
-    //     list_node_t *node = list_at(FRAME_LIST,index);
-    //     if(node){
-    //         index++;
-    //         // char *frames = ((so_play_frame *)node->val)->frames;
-    //         printf("frames = %s\n",((so_play_frame *)node->val)->frames);
-    //         write_to_buffer(((so_play_frame *)node->val)->frames);
-    //     }
-    // }
-    // close_playback();
+    list_node_t *node;
+    while(is_write_to_pcm){
+        node = list_at(FRAME_LIST,index);
+        if(node){
+            // printf("index = %d ,node = %p , node->val = %p, frames = %s\n",index,node, node->val, ((so_play_frame *)node->val)->frames);
+            write_to_buffer(((so_play_frame *)node->val)->frames);
+            index++;
+        }
+    }
+    close_playback();
     return NULL;
 }
 
+
+
+int send_to_socast(int socket, char index[16], void *servaddr){
+        bzero(index,16);
+        sprintf(index,"%d",FRAME_INDEX);
+        printf("sendto timestamp = %lld\n",getSystemTime());
+        return sendto(socket, index, strlen(index), 0, (struct sockaddr*)servaddr, sizeof(struct sockaddr));
+}
 
 //Thread2. 发送hostip 去获取数据,放入到FRAME_LIST中
 void *request_data(void *msg){
    struct sockaddr_in servaddr;
    int sock_c;
-   int addr_len;
    int recv_len;
-   
 
    /* create what looks like an ordinary UDP socket */  
    if ((sock_c=socket(AF_INET,SOCK_DGRAM,0)) < 0)   
@@ -130,37 +147,78 @@ void *request_data(void *msg){
    servaddr.sin_addr.s_addr = inet_addr(HOST_IP);  /* IP address */
    servaddr.sin_port = htons(PORT);       /* server */
 
-    addr_len = sizeof(servaddr);
     //向hostip 发送请求消息
-
     char index[16];
-    char cRecvBuf[MAX_FRAMES*2];
+    unsigned char *cRecvBuf;
     so_play_frame *rframe;
     
     pthread_t write_pcm_p;
 
+    int REC_BUF_LEN = sizeof(so_play_frame);
+    /**
+        =======
+    **/
+    struct timeval tv;
+    fd_set readfds;
+    int ret;
 
-    for(FRAME_INDEX=0;;FRAME_INDEX++){
-        // printf("request frame index = %d\n",FRAME_INDEX);
-        sprintf(index,"%d\0",FRAME_INDEX);
+    tv.tv_sec = 0;
+    tv.tv_usec = TIMEOUT;
+    /**
+    =======
+    **/
+    //第一次发送请求,重传成功后开始请求下面一个，
+    send_to_socast(sock_c,index,&servaddr);
+    for(FRAME_INDEX=0;;){
+         // printf("request frame index = %d\n",FRAME_INDEX);
+        FD_ZERO(&readfds);
+        FD_SET(sock_c,&readfds);
 
-        recv_len = sendto(sock_c, index, strlen(index), 0, (struct sockaddr*)&servaddr, addr_len);
-        bzero(cRecvBuf, MAX_FRAMES*2);
-        recv(sock_c, cRecvBuf, sizeof(cRecvBuf)+1, 0);
-        rframe=(so_play_frame *)cRecvBuf;
-        // printf("rframe timestamp = %lld value= %s\n",rframe->timestamp,rframe->frames);
-        list_node_t *node = list_node_new(rframe);
-        list_rpush(FRAME_LIST, node);
-        if(is_write_to_pcm==0){
-            is_write_to_pcm = 1;
-            //启动thread3 write_pcm
-            pthread_create(&write_pcm_p,NULL,write_pcm,NULL);
+        ret = select (sock_c+1,
+                &readfds,
+                NULL,
+                NULL,
+                &tv
+        );
 
+        if(ret==-1){
+            perror("select error");
+            return NULL;
+        } else if(!ret){
+            printf("%d us elapsed. %d timestamp = %lld\n", TIMEOUT,FRAME_INDEX,getSystemTime());
+            tv.tv_sec = 0;
+            tv.tv_usec = TIMEOUT;
+            send_to_socast(sock_c,index,&servaddr);
+            continue;
         }
-        
+
+        if(FD_ISSET(sock_c, &readfds)){
+            cRecvBuf = (unsigned char *)malloc(REC_BUF_LEN);
+            recv_len = recv(sock_c, cRecvBuf, REC_BUF_LEN+1, 0);
+            if(recv_len>0){
+                 rframe=(so_play_frame *)cRecvBuf;
+                 if(rframe->sequence>=FRAME_INDEX || (FRAME_INDEX>=MAX_INDEX && rframe->sequence<FRAME_INDEX)){
+                    // printf("rframe timestamp = %lld value= %s\n",rframe->timestamp,rframe->frames);
+                    list_node_t *node = list_node_new(rframe);
+                    // printf("cRecvBuf = %p ,index = %d ,node.timestamp = %p\n",cRecvBuf,FRAME_LIST->len,((so_play_frame *)node->val)->frames);
+                    list_rpush(FRAME_LIST, node);
+                    FRAME_INDEX++;
+                    send_to_socast(sock_c,index,&servaddr);
+                 }
+                if(is_write_to_pcm==0 && FRAME_INDEX>100){
+                    is_write_to_pcm = 1;
+                    //启动thread3 write_pcm
+                    pthread_create(&write_pcm_p,NULL,write_pcm,NULL);
+                }
+            }else{
+                free(cRecvBuf);
+            }
+        }
     }
-    
 }
+
+
+
 
 
 //1. 监听广播

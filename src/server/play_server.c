@@ -51,27 +51,31 @@ void *data_server(void *msg){
   long long end;
   list_node_t *node_t;
   int length;
-  char data[MAX_FRAMES+8] = {0};
+  int data_len = sizeof(so_play_frame);
+  printf("so_play_frame len = %lu\n",sizeof(so_play_frame));
+  char data[sizeof(so_play_frame)] = {0};
   for (i = 0; ; i++) {
       //data num_frames
       // start = getSystemTime();
       // printf("start time: %lld ms\n", start);
       // printf("i=%d\n",i);
+      bzero(cRecvBuf,128);
       length = recvfrom(sock_c, cRecvBuf, 128, 0,(struct sockaddr *) &echoserver, &socklen);
       if(length<=0){
         continue;
       }
 
       node_t = list_at(FRAME_LIST, atoi(cRecvBuf));
-
-      printf("index = %d\n",atoi(cRecvBuf));
-      bzero(data, MAX_FRAMES+8);
-      so_play_frame *frames = (so_play_frame *)node_t->val;
-      strncpy(data,node_t->val,MAX_FRAMES+8);
-      // printf("data = %s len = %lu\n",frames->frames,sizeof(frames->frames));
-      if(sendto(sock_c, node_t->val, MAX_FRAMES+8, 0, (struct sockaddr *) &echoserver, sizeof(echoserver))<0){
-         perror("sendto");  
-         break;
+      if(node_t){
+        printf("index = %d\n",atoi(cRecvBuf));
+        bzero(data, data_len);
+        so_play_frame *frames = (so_play_frame *)node_t->val;
+        strncpy(data,node_t->val,data_len);
+        // printf("data = %s len = %lu\n",frames->frames,sizeof(frames->frames));
+        if(sendto(sock_c, node_t->val, data_len, 0, (struct sockaddr *) &echoserver, sizeof(echoserver))<0){
+           perror("sendto");  
+           break;
+        }
       }
       // end = getSystemTime();
       // printf("end time: %lld ms\n", end);
@@ -117,6 +121,7 @@ void *read_buffer(void *filename){
           }else{
             frame->timestamp = getSystemTime(); //
           }
+          frame->sequence = index;
           // printf("frames p=%p\n",frame->frames);
           //data num_frames
           if((ret = read(fd,frame->frames,MAX_FRAMES))<=0){
@@ -150,9 +155,9 @@ void *read_buffer(void *filename){
   // for(tindex=0;tindex<FRAME_LIST->len;tindex++){
   //    list_node_t *a = list_iterator_next(it);
   //   so_play_frame *data = (so_play_frame *)a->val;
-  //   printf("timestamp = %lld frames len = %lu \n frame = %s\n",data->timestamp,sizeof(data->frames),data->frames);
-
+  //   printf("timestamp = %lld frames len = %lu \n frame = %p\n",data->timestamp,sizeof(data->frames),data->frames);
   // }
+  printf("FRAME_LIST LENGTH = %d\n",FRAME_LIST->len);
 
 
    //todo  3. 通知停止
