@@ -12,22 +12,37 @@
 #include <alsa/asoundlib.h>
 #include <errno.h>
 #include "socast.h"
-list_t *FRAME_LIST;
 
-int IS_RUNNING = 0;
+/**
+  目前存在的问题：
+   1. 重新开始后，延迟过大
+   2. 容易出现 pcm buffer申请不到内存的现象
+   3. 定时任务还没有完成
+   4. 基于广播的命令有可能丢失（后期改为TCP链接）
+   5. 增加多线程处理同时请求的问题
+
+*/
+
 
 
 #define RATE 44100
 #define CHANNELS 2
 #define LATENCY 50000
 
+so_play_frame FRAME_LIST[MAX_INDEX];
+
+int IS_RUNNING = 0;
+
+int FRAME_INDEX = 0;
+
 static char *PCM_DEVICE = "default";                        /* playback device */
 
 snd_pcm_t *PCM_HANDLE;
 
 snd_pcm_uframes_t PCM_FRAMES;  
+unsigned int SLEEP_TIME = 1000; //1us ;
 
-
+int S_MAX = 0;
 
 long long getSystemTime() {
     struct timeb t;
@@ -72,58 +87,57 @@ void init_playback(){
 }
 
 
-int read_record(){
-  init_playback();
-  int ret;
-  int index;  //序列号
-  so_play_frame *frame;
-  list_node_t *node;
-
-  list_destroy(FRAME_LIST);
-  FRAME_LIST = list_new();
+void *read_record(void *msg){
   
-  for(index=0;IS_RUNNING;) {
-    //当index == 0 等时候走一次时间戳的获取及校准
+  int ret;
+  FRAME_INDEX=0;
+  while(1){
+    if(IS_RUNNING) {
+      //当index == 0 等时候走一次时间戳的获取及校准
+      if(FRAME_INDEX==0){
+        FRAME_LIST[FRAME_INDEX].timestamp = getSystemTime()+40; //40ms的延迟处理
+      }else{
+        FRAME_LIST[FRAME_INDEX].timestamp = getSystemTime(); //
+      }
+      FRAME_LIST[FRAME_INDEX].sequence = FRAME_INDEX;
 
-   //根据list排序写入列表
-    //申请一块内存一个frame struct
-    
-    if (!(frame = LIST_MALLOC(sizeof(so_play_frame))))
-       break;
-    if(index==0){
-      frame->timestamp = getSystemTime()+40; //40ms的延迟处理
-    }else{
-      frame->timestamp = getSystemTime(); //
-    }
-    frame->sequence = index;
-    bzero(frame->frames,MAX_FRAMES);
-    printf("after index = %d\n",index);
-    ret = snd_pcm_readi(PCM_HANDLE, frame->frames,PCM_FRAMES); 
-    printf("frames size = %lu\n",strlen(frame->frames));
-    if (ret == -EPIPE) {  
-        /* EPIPE means overrun */  
-        fprintf(stderr, "overrun occurred\n");  
-        snd_pcm_prepare(PCM_HANDLE);  
-        continue;
-    } else if (ret < 0) {  
-        fprintf(stderr,  
-          "error from read: %s\n",  
-          snd_strerror(ret)); 
+      bzero(FRAME_LIST[FRAME_INDEX].frames,MAX_FRAMES);
+      // printf(" before read pcm %d, %lu\n",FRAME_INDEX, getSystemTime());
+      ret = snd_pcm_readi(PCM_HANDLE, FRAME_LIST[FRAME_INDEX].frames,PCM_FRAMES); 
+      if (ret == -EPIPE) {  
+          /* EPIPE means overrun */  
+          fprintf(stderr, "overrun occurred\n");  
           snd_pcm_prepare(PCM_HANDLE);  
-        continue;
-    } else if (ret != (int)PCM_FRAMES) {  
-        fprintf(stderr, "short read, read %d frames\n", ret);  
-    }  
-    printf("index = %d\n",index);
-    node = list_node_new(frame);
-    list_rpush(FRAME_LIST, node);
-    index++;
-    if( index >= MAX_INDEX){
-      index=0;
+          continue;
+      } else if (ret < 0) {  
+          fprintf(stderr,  
+            "error from read: %s\n",  
+            snd_strerror(ret)); 
+            snd_pcm_prepare(PCM_HANDLE);  
+          continue;
+      } else if (ret != (int)PCM_FRAMES) {  
+          fprintf(stderr, "short read, read %d frames\n", ret);  
+      }  
+      printf("ret = %d, PCM_FRAMES = %d\n",ret,PCM_FRAMES);
+      if( FRAME_INDEX >= MAX_INDEX-1){
+        S_MAX++;
+        FRAME_INDEX=0;
+      } else{
+        FRAME_INDEX++;
+      }
+    }else{
+      usleep(SLEEP_TIME);
     }
   }
   close_playback();
-  return 0;
+  return NULL;
+}
+void start_record(){
+  FRAME_INDEX = 0;
+  IS_RUNNING = 1;
+}
+void stop_record(){
+  IS_RUNNING = 0;
 }
 
 void *data_server(void *msg){
@@ -152,42 +166,44 @@ void *data_server(void *msg){
 
 
   //open audio file
-  char cRecvBuf[128]; 
-  int i;
-  long long start;
-  long long end;
-  list_node_t *node_t;
+  char cRecvBuf[64]; 
   int length;
   int data_len = sizeof(so_play_frame);
-  printf("so_play_frame len = %lu\n",sizeof(so_play_frame));
-  char data[sizeof(so_play_frame)] = {0};
-  if(FRAME_LIST->len<1){
-     printf("Frame list is null\n");
-  }
-  for (i = 0; ; i++) {
-      //data num_frames
-      // start = getSystemTime();
-      // printf("start time: %lld ms\n", start);
-      // printf("i=%d\n",i);
-      bzero(cRecvBuf,128);
-      length = recvfrom(sock_c, cRecvBuf, 128, 0,(struct sockaddr *) &echoserver, &socklen);
-      if(length<=0){
-        continue;
-      }
+  for (; ;) {
+        //data num_frames
+        // start = getSystemTime();
+        // printf("start time: %lld ms\n", start);
+        // printf("i=%d\n",i);
+      if(IS_RUNNING){
+        bzero(cRecvBuf,64);
+        length = recvfrom(sock_c, cRecvBuf, 64, 0,(struct sockaddr *) &echoserver, &socklen);
 
-
-      node_t = list_at(FRAME_LIST, atoi(cRecvBuf));
-      if(node_t){
-        // printf("index = %d\n",atoi(cRecvBuf));
-        bzero(data, data_len);
-        so_play_frame *frames = (so_play_frame *)node_t->val;
-        strncpy(data,node_t->val,data_len);
-        // printf("data = %s len = %lu\n",frames->frames,sizeof(frames->frames));
-        if(sendto(sock_c, node_t->val, data_len, 0, (struct sockaddr *) &echoserver, sizeof(echoserver))<0){
-           perror("sendto");  
-           break;
+        if(length<=0){
+          continue;
         }
+        //todo fork 处理
+        // printf("data = %s len = %lu\n",frames->frames,sizeof(frames->frames));
+        int recIndex = atoi(cRecvBuf);
+        while(1){
+           if(recIndex < FRAME_INDEX || (recIndex-FRAME_INDEX)>(MAX_INDEX-10)){
+                // printf("before send to request INDEX %d , %lu\n",FRAME_INDEX, getSystemTime());
+
+                // printf("request index %d <= FRAME_INDEX %d\n",atoi(cRecvBuf),FRAME_INDEX);
+              while(sendto(sock_c, &FRAME_LIST[atoi(cRecvBuf)], data_len, 0, (struct sockaddr *) &echoserver, sizeof(echoserver))<0){
+                 perror("sendto");  
+              }
+              printf("after send to request INDEX %d , %lu\n",FRAME_INDEX, getSystemTime());
+
+              break;
+           }else{
+                // printf("request index %d , timestamp = %lu\n",recIndex,getSystemTime());
+
+           }
+        }
+      }else{
+        usleep(SLEEP_TIME);
       }
+     
       // end = getSystemTime();
       // printf("end time: %lld ms\n", end);
       // printf("rece buffer = %s timestamp = %d\n",cRecvBuf,0);
@@ -211,51 +227,34 @@ void *read_buffer(void *filename){
   if ( fd < 0 ) {
       printf("open file %s error\n",filename);
   }else{
-      int index;
       so_play_frame *frame;
-      list_node_t *node;
-
-      list_destroy(FRAME_LIST);
-      FRAME_LIST = list_new();
-
-      for(index=0;IS_RUNNING;index++) {
+      for(FRAME_INDEX=0;IS_RUNNING;) {
           //当index == 0 等时候走一次时间戳的获取及校准
 
          //根据list排序写入列表
           //申请一块内存一个frame struct
 
-          if(index>=FRAME_LIST->len){
-              if (!(frame = LIST_MALLOC(sizeof(so_play_frame)))){
-                  break;
-              }
-           } else{
-               node = list_at(FRAME_LIST,index);
-               if(node){
-                   frame = (so_play_frame *)node->val;
-               }
-               bzero(frame->frames,MAX_FRAMES);
-           }
-          if(index==0){
-            frame->timestamp = getSystemTime()+40; //40ms的延迟处理
+
+           bzero(&(FRAME_LIST[FRAME_INDEX].frames),MAX_FRAMES);
+          if(FRAME_INDEX==0){
+            FRAME_LIST[FRAME_INDEX].timestamp = getSystemTime()+40; //40ms的延迟处理
           }else{
-            frame->timestamp = getSystemTime(); //
+            FRAME_LIST[FRAME_INDEX].timestamp = getSystemTime(); //
           }
-          frame->sequence = index;
+          FRAME_LIST[FRAME_INDEX].sequence = FRAME_INDEX;
           // printf("frames p=%p\n",frame->frames);
           //data num_frames
-          if((ret = read(fd,frame->frames,MAX_FRAMES))<=0){
+          if((ret = read(fd,FRAME_LIST[FRAME_INDEX].frames,MAX_FRAMES))<=0){
               printf("muisc play end\n");
               break;
           }   
-          lseek(fd,MAX_FRAMES*index,SEEK_SET);
-          if(index>=FRAME_LIST->len){
-               //新建一个node
-              node = list_node_new(frame);
-              list_rpush(FRAME_LIST, node);
-           }
+          lseek(fd,MAX_FRAMES*FRAME_INDEX,SEEK_SET);
+          
           //index最大值为MAX_INDEX 
-          if( index >= MAX_INDEX){
-            index=0;
+          if( FRAME_INDEX >= MAX_INDEX-1){
+            FRAME_INDEX=0;
+          }else{
+            FRAME_INDEX++;
           }
           // printf("Test %d ret:%d, frames len%d\n",index,ret,FRAME_LIST->len);
       }
@@ -278,14 +277,8 @@ void *read_buffer(void *filename){
   //   so_play_frame *data = (so_play_frame *)a->val;
   //   printf("timestamp = %lld frames len = %lu \n frame = %p\n",data->timestamp,sizeof(data->frames),data->frames);
   // }
-  printf("FRAME_LIST LENGTH = %d\n",FRAME_LIST->len);
+  printf("FRAME_LIST LENGTH = %d\n",sizeof(FRAME_LIST)/sizeof(so_play_frame));
    //todo  3. 通知停止
-  return NULL;
-}
-
-
-void *record_play(void *msg){
-  read_record();
   return NULL;
 }
 
@@ -318,7 +311,6 @@ int send_broadcast(char *buffer,int len){
 }
 
 int main(int argc, char *argv[]) {
-   FRAME_LIST = list_new();
   
    //printf("2\n");
   pthread_t server_p,play_p;
@@ -329,6 +321,7 @@ int main(int argc, char *argv[]) {
   char buf[1024];
   int len = -1;
   //Thread 2
+  init_playback();
   if(argc>1){
     //如果是播放音乐，可以先读取音乐，然后发送命令播放
     if(strncmp(argv[1],play,2)==0){
@@ -344,11 +337,13 @@ int main(int argc, char *argv[]) {
     if(strncmp(argv[1],record,2)==0){
         //录加播放
       type = 2;
+      pthread_create(&play_p,NULL,read_record,NULL);  
     }
   }else{
     printf("./socast -p|r [filename]\n");
     return 0;
   }
+
 
    pthread_create(&server_p,NULL,data_server,NULL);
    //Thread 1. 启动一个监听请求的UDP server，处理到LIST中获取frames
@@ -356,7 +351,7 @@ int main(int argc, char *argv[]) {
        //发送数据
    // pthread_join(server_p,NULL);
 
-
+   
   
   while(1){
       bzero(buf,1024);
@@ -377,29 +372,33 @@ int main(int argc, char *argv[]) {
           }
           IS_RUNNING = 1;
             //发送组播到其他speaker 开始播放
-          send_broadcast(CMD_START,strlen(CMD_START));
           printf("%s : ",CMD_START);
-            if(type==1){
-                printf(" play %s\n",argv[2]);
-                pthread_create(&play_p,NULL,read_buffer,(void *)argv[2]);  
-            }else{
-                printf(" record play\n");
-                pthread_create(&play_p,NULL,record_play,NULL);  
-            }
-            
-        }else if(strncmp(buf,CMD_STOP,len-1)==0){
-          IS_RUNNING = 0;
-            //发送组播到其他speaker 停止播放
-          send_broadcast(CMD_STOP,strlen(CMD_STOP));
+          printf(" start %lu\n",getSystemTime());
 
-            printf("%s\n",CMD_STOP);
+          send_broadcast(CMD_START,strlen(CMD_START));
+          printf(" send_broadcast %lu\n",getSystemTime());
+
+          FRAME_INDEX=0;
+          if(type==1){
+              printf(" play %s\n",argv[2]);
+              pthread_create(&play_p,NULL,read_buffer,(void *)argv[2]);  
+          }else{
+              printf(" record play\n");
+              start_record();
+              printf(" pthread_create record_play %lu\n",getSystemTime());
+          }
+        }else if(strncmp(buf,CMD_STOP,len-1)==0){
+            //发送组播到其他speaker 停止播放
+          stop_record();
+          send_broadcast(CMD_STOP,strlen(CMD_STOP));
+          printf("%s\n",CMD_STOP);
         }else{
           printf("error\n");
         }
         // printf("read:%s\n",buf);
       }
   }
-
+  close_playback();
   return 0;
 }
 

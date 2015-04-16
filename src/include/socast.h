@@ -7,8 +7,6 @@
 
 #include <stdio.h>
 
-#include "list.h"
-
 
 #define LISTEN_IP "0.0.0.0"
 #define PORT 8883
@@ -16,7 +14,7 @@
 #define PORT_C 8884
 
 
-#define MAX_INDEX 65535*10
+#define MAX_INDEX 1024*8
 
 #define MAX_FRAMES 2048 //传输 的数据大小，2048 比较稳定
 
@@ -39,7 +37,7 @@ typedef struct so_play_frame_
 
 
 
-extern list_t *FRAME_LIST;
+extern so_play_frame FRAME_LIST[MAX_INDEX];
 
 
 #endif  // _SOCAST_INCLUDE_
