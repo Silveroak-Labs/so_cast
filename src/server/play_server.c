@@ -1,15 +1,4 @@
-#include <sys/socket.h>
 #include <arpa/inet.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <netinet/in.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/fcntl.h>
-#include <sys/timeb.h>
-#include <pthread.h>
-#include <alsa/asoundlib.h>
 #include <errno.h>
 #include "socast.h"
 
@@ -24,7 +13,6 @@
 */
 
 
-
 #define RATE 44100
 #define CHANNELS 2
 #define LATENCY 50000
@@ -35,75 +23,36 @@ int IS_RUNNING = 0;
 
 int FRAME_INDEX = 0;
 
-static char *PCM_DEVICE = "default";                        /* playback device */
 
 snd_pcm_t *PCM_HANDLE;
 
-snd_pcm_uframes_t PCM_FRAMES;  
-unsigned int SLEEP_TIME = 1000; //1us ;
+static char *PCM_DEVICE = "default";                        /* playback device */
+
+snd_pcm_uframes_t PCM_FRAME_NUM = MAX_FRAMES/4;
+
+struct timespec SLEEP_TIME = {
+    .tv_sec = 0,
+    .tv_nsec = 1000000 //1ms
+
+}; 
 
 int S_MAX = 0;
 
-long long getSystemTime() {
-    struct timeb t;
-    ftime(&t);
-    return 1000 * t.time + t.millitm;
-}
-
-void Die(char *mess) { perror(mess); exit(1); }
-
-void close_playback(){
-    
-    snd_pcm_prepare(PCM_HANDLE); 
-    snd_pcm_drain(PCM_HANDLE); 
-    snd_pcm_close(PCM_HANDLE);
-    printf("close_playback\n");
-}
-
-/**
-   初始化 pcm 
-*/
-void init_playback(){
-    printf("init_playback\n");
-    int err;
-
-    if ((err = snd_pcm_open(&PCM_HANDLE, PCM_DEVICE, SND_PCM_STREAM_CAPTURE, 0)) < 0) {
-            printf("Playback open error: %s\n", snd_strerror(err));
-            // exit(EXIT_FAILURE);
-    }
-    if ((err = snd_pcm_set_params(PCM_HANDLE,
-                                  SND_PCM_FORMAT_S16_LE,
-                                  SND_PCM_ACCESS_RW_INTERLEAVED,
-                                  CHANNELS,
-                                  RATE,
-                                  1,
-                                  LATENCY)) < 0) {   /* 0.5sec */
-            printf("Playback open error: %s\n", snd_strerror(err));
-            // exit(EXIT_FAILURE);
-    }
-    //open audio file
-    int ret;
-    PCM_FRAMES = MAX_FRAMES/4;
-}
-
 
 void *read_record(void *msg){
+  printf("start record \n");
   
   int ret;
   FRAME_INDEX=0;
   while(1){
     if(IS_RUNNING) {
       //当index == 0 等时候走一次时间戳的获取及校准
-      if(FRAME_INDEX==0){
-        FRAME_LIST[FRAME_INDEX].timestamp = getSystemTime()+40; //40ms的延迟处理
-      }else{
-        FRAME_LIST[FRAME_INDEX].timestamp = getSystemTime(); //
-      }
+      gettimeofday(&(FRAME_LIST[FRAME_INDEX].timestamp),NULL);
       FRAME_LIST[FRAME_INDEX].sequence = FRAME_INDEX;
 
       bzero(FRAME_LIST[FRAME_INDEX].frames,MAX_FRAMES);
       // printf(" before read pcm %d, %lu\n",FRAME_INDEX, getSystemTime());
-      ret = snd_pcm_readi(PCM_HANDLE, FRAME_LIST[FRAME_INDEX].frames,PCM_FRAMES); 
+      ret = snd_pcm_readi(PCM_HANDLE, FRAME_LIST[FRAME_INDEX].frames,PCM_FRAME_NUM); 
       if (ret == -EPIPE) {  
           /* EPIPE means overrun */  
           fprintf(stderr, "overrun occurred\n");  
@@ -115,10 +64,10 @@ void *read_record(void *msg){
             snd_strerror(ret)); 
             snd_pcm_prepare(PCM_HANDLE);  
           continue;
-      } else if (ret != (int)PCM_FRAMES) {  
+      } else if (ret != (int)PCM_FRAME_NUM) {  
           fprintf(stderr, "short read, read %d frames\n", ret);  
       }  
-      printf("ret = %d, PCM_FRAMES = %d\n",ret,PCM_FRAMES);
+      printf("ret = %d, PCM_FRAME_NUM = %d\n",ret,PCM_FRAME_NUM);
       if( FRAME_INDEX >= MAX_INDEX-1){
         S_MAX++;
         FRAME_INDEX=0;
@@ -126,10 +75,9 @@ void *read_record(void *msg){
         FRAME_INDEX++;
       }
     }else{
-      usleep(SLEEP_TIME);
+            nanosleep(&SLEEP_TIME,NULL);
     }
   }
-  close_playback();
   return NULL;
 }
 void start_record(){
@@ -141,6 +89,7 @@ void stop_record(){
 }
 
 void *data_server(void *msg){
+  printf("start data server\n");
   struct sockaddr_in echoserver;
   int sock_c;
   socklen_t socklen = sizeof(struct sockaddr_in);
@@ -201,7 +150,7 @@ void *data_server(void *msg){
            }
         }
       }else{
-        usleep(SLEEP_TIME);
+            nanosleep(&SLEEP_TIME,NULL);
       }
      
       // end = getSystemTime();
@@ -236,11 +185,8 @@ void *read_buffer(void *filename){
 
 
            bzero(&(FRAME_LIST[FRAME_INDEX].frames),MAX_FRAMES);
-          if(FRAME_INDEX==0){
-            FRAME_LIST[FRAME_INDEX].timestamp = getSystemTime()+40; //40ms的延迟处理
-          }else{
-            FRAME_LIST[FRAME_INDEX].timestamp = getSystemTime(); //
-          }
+           gettimeofday(&(FRAME_LIST[FRAME_INDEX].timestamp),NULL);
+
           FRAME_LIST[FRAME_INDEX].sequence = FRAME_INDEX;
           // printf("frames p=%p\n",frame->frames);
           //data num_frames
@@ -310,6 +256,30 @@ int send_broadcast(char *buffer,int len){
     return 0;
 }
 
+void init_playback_r(){
+    printf("init_playback\n");
+    int err;
+
+    if ((err = snd_pcm_open(&PCM_HANDLE, PCM_DEVICE, SND_PCM_STREAM_CAPTURE, 0)) < 0) {
+            printf("Playback open error: %s\n", snd_strerror(err));
+            // exit(EXIT_FAILURE);
+    }
+    if ((err = snd_pcm_set_params(PCM_HANDLE,
+                                  SND_PCM_FORMAT_S16_LE,
+                                  SND_PCM_ACCESS_RW_INTERLEAVED,
+                                  CHANNELS,
+                                  RATE,
+                                  1,
+                                  LATENCY)) < 0) {   /* 0.5sec */
+            printf("Playback open error: %s\n", snd_strerror(err));
+            // exit(EXIT_FAILURE);
+    }
+    //open audio file
+    int ret;
+    printf("========== PCM_FRAME_NUM %d\n",PCM_FRAME_NUM);
+
+}
+
 int main(int argc, char *argv[]) {
   
    //printf("2\n");
@@ -320,8 +290,12 @@ int main(int argc, char *argv[]) {
   //输入命令使用
   char buf[1024];
   int len = -1;
+
+  so_play_cmd *play_cmd; 
+  play_cmd = malloc(sizeof(so_play_cmd));
+
   //Thread 2
-  init_playback();
+  init_playback_r();
   if(argc>1){
     //如果是播放音乐，可以先读取音乐，然后发送命令播放
     if(strncmp(argv[1],play,2)==0){
@@ -337,6 +311,7 @@ int main(int argc, char *argv[]) {
     if(strncmp(argv[1],record,2)==0){
         //录加播放
       type = 2;
+      printf("type 2\n");
       pthread_create(&play_p,NULL,read_record,NULL);  
     }
   }else{
@@ -351,54 +326,60 @@ int main(int argc, char *argv[]) {
        //发送数据
    // pthread_join(server_p,NULL);
 
-   
+  
+  
   
   while(1){
       bzero(buf,1024);
-      printf("Input key : [%s,%s]\n",CMD_START,CMD_STOP);
+      printf("Input key : [start:%d,stop:%d]\n",CMD_START,CMD_STOP);
       len = read(STDIN_FILENO, buf,1024);
       if(len == -1){
         perror("read error");
         return 1;
       }
 
-      if(len>3){
-        buf[len] = '\0';
-        printf("buffer = %s\n",buf);
-        if(strncmp(buf,CMD_START,len-1)==0){
-          if(IS_RUNNING==1){
-            printf("Already is running ,please input 'stop'\n");
-            continue;
-          }
-          IS_RUNNING = 1;
-            //发送组播到其他speaker 开始播放
-          printf("%s : ",CMD_START);
-          printf(" start %lu\n",getSystemTime());
+      if(len>0){
+          buf[len] = '\0';
+          printf("buffer = %s\n",buf);
+          if(atoi(buf)==CMD_START){
+            if(IS_RUNNING==1){
+              printf("Already is running ,please input 'stop'\n");
+              continue;
+            }
+            IS_RUNNING = 1;
+              //发送组播到其他speaker 开始播放
+            printf(" start %d : ",CMD_START);
+            printf(" start %lu\n",getSystemTime());
+            play_cmd->type=CMD_START;
+            gettimeofday(&(play_cmd->current_t),NULL);
+            play_cmd->current_t.tv_usec = (play_cmd->current_t.tv_usec+40000);
 
-          send_broadcast(CMD_START,strlen(CMD_START));
-          printf(" send_broadcast %lu\n",getSystemTime());
+            send_broadcast((char *)play_cmd,sizeof(so_play_cmd));
+            printf(" send_broadcast %lu\n",getSystemTime());
 
-          FRAME_INDEX=0;
-          if(type==1){
-              printf(" play %s\n",argv[2]);
-              pthread_create(&play_p,NULL,read_buffer,(void *)argv[2]);  
+            FRAME_INDEX=0;
+            if(type==1){
+                printf(" play %s\n",argv[2]);
+                pthread_create(&play_p,NULL,read_buffer,(void *)argv[2]);  
+            }else{
+                printf(" record play\n");
+                start_record();
+                printf(" pthread_create record_play %lu\n",getSystemTime());
+            }
+          }else  if(atoi(buf)==CMD_STOP){
+              //发送组播到其他speaker 停止播放
+            stop_record();
+            play_cmd->type=CMD_STOP;
+            gettimeofday(&(play_cmd->current_t),NULL);
+            send_broadcast((char *)play_cmd,sizeof(so_play_cmd));
+            printf("STOP %d\n",CMD_STOP);
           }else{
-              printf(" record play\n");
-              start_record();
-              printf(" pthread_create record_play %lu\n",getSystemTime());
+            printf("error\n");
           }
-        }else if(strncmp(buf,CMD_STOP,len-1)==0){
-            //发送组播到其他speaker 停止播放
-          stop_record();
-          send_broadcast(CMD_STOP,strlen(CMD_STOP));
-          printf("%s\n",CMD_STOP);
-        }else{
-          printf("error\n");
-        }
         // printf("read:%s\n",buf);
       }
   }
-  close_playback();
+  close_playback(PCM_HANDLE);
   return 0;
 }
 

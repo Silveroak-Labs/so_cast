@@ -1,20 +1,5 @@
 
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <netinet/in.h>
-#include <sys/stat.h>
-#include <sys/fcntl.h>
-#include <sys/timeb.h>
-
-#include <sys/time.h>
-#include <sys/types.h>
-#include <unistd.h>
-
-#include <pthread.h>
-#include <alsa/asoundlib.h> 
+#include <time.h>
 #include "socast.h"
 
 /**
@@ -24,8 +9,6 @@ speaker
       因为要求时间较短因此短期内重试可以有效避免传输慢而丢失的问题
 
 */
-
-#define MAX_SIZE 1024
 
 #define TIMEOUT 50000  //50 ms
 
@@ -51,30 +34,22 @@ int IS_WRITE_TO_PCM = 0;
 
 int IS_REQUEST = 0;
 
-unsigned int SLEEP_TIME = 1000; //1us ;
+struct timespec SLEEP_TIME = {
+    .tv_sec = 0,
+    .tv_nsec = 1000000  //1ms
+
+}; //1us ;
 
 
 int S_MAX = 0;
 
-long long getSystemTime() {
-    struct timeb t;
-    ftime(&t);
-    return 1000 * t.time + t.millitm;
-}
+so_play_cmd *RECV_CMD;
 
-/**
-   关闭pcm
-*/
-void close_playback(){
-    printf("close_playback\n");
-    snd_pcm_drain(PCM_HANDLE); 
-    snd_pcm_close(PCM_HANDLE);
-}
 
 /**
    初始化 pcm 
 */
-void init_playback(){
+void init_playback_p(){
     printf("init_playback\n");
     int err;
 
@@ -97,6 +72,7 @@ void init_playback(){
     printf("========== PCM_FRAME_NUM %d\n",PCM_FRAME_NUM);
 
 }
+
 
 /**
    向pcm缓存中写数据
@@ -135,7 +111,7 @@ void *write_to_buffer(void *msg){
             if(index>0){
                index=0; 
             }
-            usleep(SLEEP_TIME);
+            nanosleep(&SLEEP_TIME,NULL);
 
         }
     }
@@ -251,18 +227,18 @@ void *request_data(void *msg){
                     }
                     send_to_socast(sock_c,FRAME_INDEX,&servaddr);
                 }
-                if(IS_WRITE_TO_PCM == 0 && FRAME_INDEX >=1 && IS_REQUEST == 1){
-                    //启动thread3 write_pcm
-                    //todo 定时启动 write pcm
-                    start_write_pcm();
-                }
+                // if(IS_WRITE_TO_PCM == 0 && FRAME_INDEX >=1 && IS_REQUEST == 1){
+                //     //启动thread3 write_pcm
+                //     //todo 定时启动 write pcm
+                //     start_write_pcm();
+                // }
 
             }
         }else{
             if(FRAME_INDEX>0){
                FRAME_INDEX =0; 
             }
-            usleep(SLEEP_TIME);
+            nanosleep(&SLEEP_TIME,NULL);
         }
     }
     
@@ -278,6 +254,41 @@ void stop_request_data(){
     IS_REQUEST = 0;
 }
 
+long secends=0;
+long usec =0;
+void *time_start(void *msg){
+    
+    printf("1  recv time = ");
+    print_timestamp();
+    struct timeval current_time;
+    // printf("recv seconds = %ld ,useconds = %ld\n",(long) RECV_CMD->current_t.tv_sec, (long)RECV_CMD->current_t.tv_usec);
+
+    gettimeofday(&current_time,NULL);
+    secends = (long)(RECV_CMD->current_t.tv_sec - current_time.tv_sec);
+    usec =  (long)(RECV_CMD->current_t.tv_usec - current_time.tv_usec);
+    if(secends>0){
+        if(usec<0){
+            secends = secends-1;
+            usec = usec+secends*1000000;
+        }
+    }
+    printf("secends = %ld ,usec = %ld\n",secends,usec);
+    printf("2  recv time = ");
+    print_timestamp();
+    const struct timespec spec ={
+        .tv_sec = secends,
+        .tv_nsec = usec*1000
+
+    };
+    printf("3  recv time = ");
+    print_timestamp();
+    nanosleep(&spec,NULL);
+    print_timestamp();
+    start_write_pcm();
+    printf("4  recv time = ");
+    print_timestamp();
+
+}
 //1. 监听广播
 void *listent_socket(void *msg){
     int sockfd;
@@ -312,21 +323,32 @@ void *listent_socket(void *msg){
         exit(1);  
     }  
     int length;
-    char rervBuffer[MAX_SIZE];
+    int recvLen = sizeof(so_play_cmd)+1;
+    char rervBuffer[recvLen];
+    
+    pthread_t start_write_p;
+    RECV_CMD = malloc(sizeof(so_play_cmd));
     while(1){
-        bzero(rervBuffer, MAX_SIZE);
-        length = recvfrom(sockfd, rervBuffer, MAX_SIZE, 0,(struct sockaddr *) &servaddr, &socklen);
+        bzero(rervBuffer, recvLen);
+        length = recvfrom(sockfd, rervBuffer, recvLen, 0,(struct sockaddr *) &servaddr, &socklen);
         if (length <= 3)
         {
             printf("Server Recieve Data error!\n");
         }else {
             printf("recv buffer = %s\n",rervBuffer);
-            if(strncmp(rervBuffer,CMD_START,strlen(CMD_START))==0){
+            so_play_cmd *tmp_cmd = (so_play_cmd *)rervBuffer;
+            RECV_CMD->type = tmp_cmd->type;
+            RECV_CMD->current_t.tv_sec = tmp_cmd->current_t.tv_sec;
+            RECV_CMD->current_t.tv_usec = tmp_cmd->current_t.tv_usec;
+
+            if(RECV_CMD->type==CMD_START){
                 printf("start request\n");
+                //todo 根据 cmd->current_t 的时间戳来启动
                 start_request_data();
-            }
-            else if(strncmp(rervBuffer,CMD_STOP,strlen(CMD_STOP))==0){
-                printf("stop request\n");
+                printf("recv seconds = %ld ,useconds = %ld\n",(long) RECV_CMD->current_t.tv_sec, (long)RECV_CMD->current_t.tv_usec);
+                pthread_create(&start_write_p,NULL,time_start,NULL);
+            }else{
+                 printf("stop request\n");
                 stop_write_pcm();
                 stop_request_data();
             }
@@ -343,7 +365,8 @@ int main(int argc,char *argv[]){
         printf("./speaker (host_ip)\n\n");
         return 0;
     }
-    init_playback();
+    //void init_playback(snd_pcm_t *handle,char *device,int type,int format,int access,int channels,int rate,int latency);
+    init_playback_p();
     //指定host ip
     HOST_IP = argv[1];
     //Thread2. 发送hostip 去获取数据,放入到FRAME_LIST中
@@ -356,6 +379,6 @@ int main(int argc,char *argv[]){
     
     pthread_join(listen_p,NULL);
    
-    close_playback();
+    close_playback(PCM_HANDLE);
     return 0;
 }
