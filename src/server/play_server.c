@@ -36,6 +36,10 @@ struct timespec SLEEP_TIME = {
 
 }; 
 
+int SOCK_DATA_QUEST;
+
+socklen_t socklen = sizeof(struct sockaddr_in);
+
 int S_MAX = 0;
 
 
@@ -67,7 +71,6 @@ void *read_record(void *msg){
       } else if (ret != (int)PCM_FRAME_NUM) {  
           fprintf(stderr, "short read, read %d frames\n", ret);  
       }  
-      printf("ret = %d, PCM_FRAME_NUM = %d\n",ret,PCM_FRAME_NUM);
       if( FRAME_INDEX >= MAX_INDEX-1){
         S_MAX++;
         FRAME_INDEX=0;
@@ -88,14 +91,40 @@ void stop_record(){
   IS_RUNNING = 0;
 }
 
+
+void *process_request(void *msg){
+   //todo fork 处理
+    // printf("data = %s len = %lu\n",frames->frames,sizeof(frames->frames));
+    int data_len = sizeof(so_play_frame);
+    so_sp *sp = (so_sp *)msg;
+    int recIndex = atoi(sp->msg);
+    printf("new thread ");
+    print_timestamp();
+    while(IS_RUNNING){
+       if(recIndex < FRAME_INDEX || (recIndex-FRAME_INDEX)>(MAX_INDEX-10)){
+          printf("request index %d <= FRAME_INDEX %d\n",recIndex,FRAME_INDEX);
+          while((sendto(SOCK_DATA_QUEST, &FRAME_LIST[recIndex], data_len, 0, (struct sockaddr *)&sp->from_server, socklen)<0) && IS_RUNNING){
+             perror("sendto+");  
+             print_timestamp();
+          }
+          printf("after send to request INDEX %d , %lu\n",FRAME_INDEX, getSystemTime());
+          break;
+       }
+    }
+    free(msg);
+    printf("1end thread %d  ",pthread_self());
+    print_timestamp();
+    pthread_exit(NULL);
+    return NULL;
+}
+
 void *data_server(void *msg){
   printf("start data server\n");
   struct sockaddr_in echoserver;
-  int sock_c;
-  socklen_t socklen = sizeof(struct sockaddr_in);
+  
 
   /* create what looks like an ordinary UDP socket */  
-  if ((sock_c=socket(AF_INET,SOCK_DGRAM,0)) < 0)   
+  if ((SOCK_DATA_QUEST=socket(AF_INET,SOCK_DGRAM,0)) < 0)   
   {  
       perror("socket");  
       exit(1);  
@@ -107,7 +136,7 @@ void *data_server(void *msg){
   echoserver.sin_addr.s_addr = inet_addr(LISTEN_IP);  /* IP address */
   echoserver.sin_port = htons(PORT);       /* server port */
  
-  if((bind(sock_c, (struct sockaddr*)&echoserver, sizeof(echoserver))) == -1){
+  if((bind(SOCK_DATA_QUEST, (struct sockaddr*)&echoserver, sizeof(echoserver))) == -1){
     perror("bind");
     exit(1);
   }else
@@ -118,39 +147,30 @@ void *data_server(void *msg){
   char cRecvBuf[64]; 
   int length;
   int data_len = sizeof(so_play_frame);
+  so_sp *sp;
+  int msg_len = sizeof(sp->msg);
+  pthread_t request_p;
   for (; ;) {
         //data num_frames
         // start = getSystemTime();
         // printf("start time: %lld ms\n", start);
         // printf("i=%d\n",i);
       if(IS_RUNNING){
-        bzero(cRecvBuf,64);
-        length = recvfrom(sock_c, cRecvBuf, 64, 0,(struct sockaddr *) &echoserver, &socklen);
-
+        
+        sp = malloc(sizeof(so_sp));//线程中释放process_request
+        sp->from_len = socklen;
+        printf("before send to request INDEX %d , %lu\n",FRAME_INDEX, getSystemTime());
+        bzero(sp->msg,msg_len);
+        length = recvfrom(SOCK_DATA_QUEST, sp->msg, msg_len, 0,(struct sockaddr *) &sp->from_server, &sp->from_len);
         if(length<=0){
+          printf("length = %d\n",length);
           continue;
         }
-        //todo fork 处理
-        // printf("data = %s len = %lu\n",frames->frames,sizeof(frames->frames));
-        int recIndex = atoi(cRecvBuf);
-        while(1){
-           if(recIndex < FRAME_INDEX || (recIndex-FRAME_INDEX)>(MAX_INDEX-10)){
-                // printf("before send to request INDEX %d , %lu\n",FRAME_INDEX, getSystemTime());
-
-                // printf("request index %d <= FRAME_INDEX %d\n",atoi(cRecvBuf),FRAME_INDEX);
-              while(sendto(sock_c, &FRAME_LIST[atoi(cRecvBuf)], data_len, 0, (struct sockaddr *) &echoserver, sizeof(echoserver))<0){
-                 perror("sendto");  
-              }
-              printf("after send to request INDEX %d , %lu\n",FRAME_INDEX, getSystemTime());
-
-              break;
-           }else{
-                // printf("request index %d , timestamp = %lu\n",recIndex,getSystemTime());
-
-           }
-        }
+        printf("sp->msg = %s\n",sp->msg);
+        pthread_create(&request_p,NULL,process_request,sp);
+        pthread_detach(request_p);
       }else{
-            nanosleep(&SLEEP_TIME,NULL);
+        nanosleep(&SLEEP_TIME,NULL);
       }
      
       // end = getSystemTime();
@@ -162,7 +182,7 @@ void *data_server(void *msg){
   /* Receive the word back from the server */
   fprintf(stdout, "Received: ");
   fprintf(stdout, "\n");
-  close(sock_c);
+  close(SOCK_DATA_QUEST);
   return NULL;
 }
 
@@ -225,6 +245,7 @@ void *read_buffer(void *filename){
   // }
   printf("FRAME_LIST LENGTH = %d\n",sizeof(FRAME_LIST)/sizeof(so_play_frame));
    //todo  3. 通知停止
+  pthread_exit(NULL);
   return NULL;
 }
 
@@ -313,6 +334,7 @@ int main(int argc, char *argv[]) {
       type = 2;
       printf("type 2\n");
       pthread_create(&play_p,NULL,read_record,NULL);  
+      pthread_detach(play_p);
     }
   }else{
     printf("./socast -p|r [filename]\n");
@@ -321,6 +343,7 @@ int main(int argc, char *argv[]) {
 
 
    pthread_create(&server_p,NULL,data_server,NULL);
+   pthread_detach(server_p);
    //Thread 1. 启动一个监听请求的UDP server，处理到LIST中获取frames
        //接收数据
        //发送数据
@@ -361,6 +384,7 @@ int main(int argc, char *argv[]) {
             if(type==1){
                 printf(" play %s\n",argv[2]);
                 pthread_create(&play_p,NULL,read_buffer,(void *)argv[2]);  
+                pthread_detach(play_p);
             }else{
                 printf(" record play\n");
                 start_record();

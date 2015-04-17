@@ -10,7 +10,7 @@ speaker
 
 */
 
-#define TIMEOUT 50000  //50 ms
+#define TIMEOUT 500000  //50 ms
 
 
 #define RATE 44100
@@ -347,6 +347,7 @@ void *listent_socket(void *msg){
                 start_request_data();
                 printf("recv seconds = %ld ,useconds = %ld\n",(long) RECV_CMD->current_t.tv_sec, (long)RECV_CMD->current_t.tv_usec);
                 pthread_create(&start_write_p,NULL,time_start,NULL);
+                pthread_detach(start_write_p);
             }else{
                  printf("stop request\n");
                 stop_write_pcm();
@@ -374,7 +375,9 @@ int main(int argc,char *argv[]){
 
     pthread_t listen_p,request_data_p,read_p;
     pthread_create(&request_data_p,NULL,request_data,NULL);
+    pthread_detach(request_data_p);
     pthread_create(&read_p,NULL,write_to_buffer,NULL);
+    pthread_detach(read_p);
     pthread_create(&listen_p,NULL,listent_socket,NULL);
     
     pthread_join(listen_p,NULL);

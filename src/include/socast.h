@@ -53,6 +53,14 @@ typedef struct so_play_cmd_
 
 } so_play_cmd;
 
+
+typedef struct so_play_server_process_
+{
+	char msg[64];
+	struct sockaddr_in from_server;
+	int from_len;
+} so_sp;
+
 long long getSystemTime();
 void close_playback(snd_pcm_t *PCM_HANDLE);
 void print_timestamp();
