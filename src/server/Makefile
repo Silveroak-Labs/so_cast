@@ -16,11 +16,15 @@ OBJS=$(SRCS:.c=.o)
 
 PROGRAME=socast
 
+
 all:$(PROGRAME)
 
+debug:$(OBJS)
+	$(CC) -o $(PROGRAME) $(SRCS) $(CFLAGS) -D DEBUG
 
 $(PROGRAME):$(OBJS)
 	$(CC) -o $(PROGRAME) $(SRCS) $(CFLAGS)
+
 
 $(OBJS):$(HEADS)
            

@@ -55,7 +55,6 @@ void *read_record(void *msg){
       FRAME_LIST[FRAME_INDEX].sequence = FRAME_INDEX;
 
       bzero(FRAME_LIST[FRAME_INDEX].frames,MAX_FRAMES);
-      // printf(" before read pcm %d, %lu\n",FRAME_INDEX, getSystemTime());
       ret = snd_pcm_readi(PCM_HANDLE, FRAME_LIST[FRAME_INDEX].frames,PCM_FRAME_NUM); 
       if (ret == -EPIPE) {  
           /* EPIPE means overrun */  
@@ -98,22 +97,33 @@ void *process_request(void *msg){
     int data_len = sizeof(so_play_frame);
     so_sp *sp = (so_sp *)msg;
     int recIndex = atoi(sp->msg);
+    #ifdef DEBUG
     printf("new thread ");
     print_timestamp();
+    #endif
     while(IS_RUNNING){
        if(recIndex < FRAME_INDEX || (recIndex-FRAME_INDEX)>(MAX_INDEX-10)){
+          #ifdef DEBUG
           printf("request index %d <= FRAME_INDEX %d\n",recIndex,FRAME_INDEX);
+          #endif
           while((sendto(SOCK_DATA_QUEST, &FRAME_LIST[recIndex], data_len, 0, (struct sockaddr *)&sp->from_server, socklen)<0) && IS_RUNNING){
              perror("sendto+");  
              print_timestamp();
           }
+          #ifdef DEBUG
           printf("after send to request INDEX %d , %lu\n",FRAME_INDEX, getSystemTime());
+          #endif
+
           break;
        }
     }
     free(msg);
+    #ifdef DEBUG
+
     printf("1end thread %d  ",pthread_self());
+    
     print_timestamp();
+    #endif
     pthread_exit(NULL);
     return NULL;
 }
@@ -159,14 +169,18 @@ void *data_server(void *msg){
         
         sp = malloc(sizeof(so_sp));//线程中释放process_request
         sp->from_len = socklen;
+        #ifdef DEBUG
         printf("before send to request INDEX %d , %lu\n",FRAME_INDEX, getSystemTime());
+        #endif
         bzero(sp->msg,msg_len);
         length = recvfrom(SOCK_DATA_QUEST, sp->msg, msg_len, 0,(struct sockaddr *) &sp->from_server, &sp->from_len);
         if(length<=0){
           printf("length = %d\n",length);
           continue;
         }
+        #ifdef DEBUG
         printf("sp->msg = %s\n",sp->msg);
+        #endif
         pthread_create(&request_p,NULL,process_request,sp);
         pthread_detach(request_p);
       }else{

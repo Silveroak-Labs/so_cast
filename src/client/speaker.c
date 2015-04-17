@@ -87,8 +87,10 @@ void *write_to_buffer(void *msg){
         // printf("index = %d ,node = %p , node->val = %p, frames = %s\n",index,node, node->val, ((so_play_frame *)node->val)->frames);
         if(IS_WRITE_TO_PCM){
             if(index<FRAME_INDEX || (index>=FRAME_INDEX && s_max!=S_MAX)){
+                #ifdef DEBUG
                 printf("wirte to buffer index %d , timestamp %lu\n",index, getSystemTime());
                 printf("frames len %lu\n",strlen(FRAME_LIST[index].frames));
+                #endif
                 len = strlen(FRAME_LIST[index].frames);
                 len = len>MAX_FRAMES?MAX_FRAMES:len;
                 FRAME_LIST[index].frames[len+1]='\0';

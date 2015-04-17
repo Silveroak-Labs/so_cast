@@ -28,6 +28,9 @@ PROGRAME=speaker
 all:$(PROGRAME)
 #lib:
 	#make -C $(LIB_I)
+	
+debug:$(OBJS)
+	$(CC) -o $(PROGRAME) $(SRCS) $(CFLAGS) -D DEBUG
 
 $(PROGRAME):$(OBJS)
 	#$(CC) $(LIBS_OBJS) -o $(PROGRAME) $(SRCS) $(CFLAGS)
