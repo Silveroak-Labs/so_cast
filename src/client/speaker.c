@@ -45,6 +45,8 @@ int S_MAX = 0;
 
 so_play_cmd *RECV_CMD;
 
+int CURRENT_STATUS = CMD_STOP; //2 stop 1 start
+
 
 /**
    初始化 pcm 
@@ -343,7 +345,8 @@ void *listent_socket(void *msg){
             RECV_CMD->current_t.tv_sec = tmp_cmd->current_t.tv_sec;
             RECV_CMD->current_t.tv_usec = tmp_cmd->current_t.tv_usec;
 
-            if(RECV_CMD->type==CMD_START){
+            if((RECV_CMD->type==CMD_START) && CURRENT_STATUS== CMD_STOP){
+                CURRENT_STATUS = CMD_START;
                 printf("start request\n");
                 //todo 根据 cmd->current_t 的时间戳来启动
                 start_request_data();
@@ -351,6 +354,7 @@ void *listent_socket(void *msg){
                 pthread_create(&start_write_p,NULL,time_start,NULL);
                 pthread_detach(start_write_p);
             }else{
+                CURRENT_STATUS = CMD_STOP;;
                  printf("stop request\n");
                 stop_write_pcm();
                 stop_request_data();

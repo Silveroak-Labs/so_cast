@@ -393,6 +393,13 @@ int main(int argc, char *argv[]) {
 
             send_broadcast((char *)play_cmd,sizeof(so_play_cmd));
             printf(" send_broadcast %lu\n",getSystemTime());
+            send_broadcast((char *)play_cmd,sizeof(so_play_cmd));
+            printf(" send_broadcast %lu\n",getSystemTime());
+            
+            send_broadcast((char *)play_cmd,sizeof(so_play_cmd));
+            printf(" send_broadcast %lu\n",getSystemTime());
+
+
 
             FRAME_INDEX=0;
             if(type==1){
@@ -411,6 +418,11 @@ int main(int argc, char *argv[]) {
             gettimeofday(&(play_cmd->current_t),NULL);
             send_broadcast((char *)play_cmd,sizeof(so_play_cmd));
             printf("STOP %d\n",CMD_STOP);
+            send_broadcast((char *)play_cmd,sizeof(so_play_cmd));
+            printf("STOP %d\n",CMD_STOP);
+            send_broadcast((char *)play_cmd,sizeof(so_play_cmd));
+            printf("STOP %d\n",CMD_STOP);
+
           }else{
             printf("error\n");
           }
