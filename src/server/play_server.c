@@ -306,6 +306,9 @@ void *listen_broadcast_find(void *msg){
     int length;
     int recvLen = sizeof(CMD_FIND)+1;
     char rervBuffer[recvLen];
+
+    char client_ip[128];
+    char server_ip[128];
     
     while(1){
         bzero(rervBuffer, recvLen);
@@ -323,7 +326,13 @@ void *listen_broadcast_find(void *msg){
               int empty = -1;
               for(i=0;i<sizeof(CLIENT_SPEAKER);i++){
                  if(CLIENT_SPEAKER[i].addr_len){
-                    if(strncmp(inet_ntoa(CLIENT_SPEAKER[i].address.sin_addr),inet_ntoa(servaddr.sin_addr),sizeof(servaddr.sin_addr))==0){
+                    bzero(client_ip,128);
+                    bzero(server_ip,128);
+                    sprintf(client_ip,"%s",inet_ntoa(CLIENT_SPEAKER[i].address.sin_addr));
+                    sprintf(server_ip,"%s",inet_ntoa(servaddr.sin_addr));
+                    printf("client_ip = %s, server_ip=%s\n",client_ip,server_ip);
+                    if(strncmp(client_ip,server_ip,strlen(client_ip)) == 0){
+                       printf("Server address = %s already is exist\n",inet_ntoa(servaddr.sin_addr));
                        isExist = 1;
                        break;
                     }
@@ -333,6 +342,7 @@ void *listen_broadcast_find(void *msg){
                   }
                  }
               }
+              printf("empty = %d\n",empty);
               if(isExist==0){
                 if(empty!=-1){
                   CLIENT_SPEAKER[empty].address = servaddr;

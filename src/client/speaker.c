@@ -398,7 +398,7 @@ int send_find_broadcast(){
     fd_set readfds;
     int ret;
 
-    tv.tv_sec = 2;
+    tv.tv_sec = 10;
     tv.tv_usec = 0;
 
     if((sendBytes = sendto(brdcfd,CMD_FIND,strlen(CMD_FIND),0,(struct sockaddr *)&b_ip, sizeof(b_ip))) == -1){
@@ -422,7 +422,7 @@ int send_find_broadcast(){
             return -1;
         } else if(!ret){
             printf("find 2s elapsed. %d\n");
-            tv.tv_sec = 2;
+            tv.tv_sec = 10;
             tv.tv_usec = 0;
             if((sendBytes = sendto(brdcfd,CMD_FIND,strlen(CMD_FIND),0,(struct sockaddr *)&b_ip, sizeof(b_ip))) == -1){
                 printf("sendto fail errno = %d\n",errno);
