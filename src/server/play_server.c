@@ -4,14 +4,16 @@
 
 /**
   目前存在的问题：
-   1. 重新开始后，延迟过大
-   2. 容易出现 pcm buffer申请不到内存的现象
-   3. 定时任务还没有完成
-   4. 基于广播的命令有可能丢失（后期改为TCP链接）
-   5. 增加多线程处理同时请求的问题
+   1. 容易出现 pcm buffer申请不到内存的现象
+   2. 基于广播的命令有可能丢失（后期改为TCP链接）
+   
 
+
+
+   增加查找功能：
+    1. 启动时获取IP地址（自动获取，或者手动指定）  
+    2. 监听广播，回复链接IP帝制  监听广播端口PORT_B，
 */
-
 
 #define RATE 44100
 #define CHANNELS 2
@@ -128,77 +130,7 @@ void *process_request(void *msg){
     return NULL;
 }
 
-void *data_server(void *msg){
-  printf("start data server\n");
-  struct sockaddr_in echoserver;
-  
 
-  /* create what looks like an ordinary UDP socket */  
-  if ((SOCK_DATA_QUEST=socket(AF_INET,SOCK_DGRAM,0)) < 0)   
-  {  
-      perror("socket");  
-      exit(1);  
-  }  
-  printf("msg = %s\n",msg);
-   /* Construct the server sockaddr_in structure */
-  memset(&echoserver, 0, sizeof(echoserver));       /* Clear struct */
-  echoserver.sin_family = AF_INET;                  /* Internet/IP */
-  echoserver.sin_addr.s_addr = inet_addr(LISTEN_IP);  /* IP address */
-  echoserver.sin_port = htons(PORT);       /* server port */
- 
-  if((bind(SOCK_DATA_QUEST, (struct sockaddr*)&echoserver, sizeof(echoserver))) == -1){
-    perror("bind");
-    exit(1);
-  }else
-    printf("bind address to socket.\n\r");
-
-
-  //open audio file
-  char cRecvBuf[64]; 
-  int length;
-  int data_len = sizeof(so_play_frame);
-  so_sp *sp;
-  int msg_len = sizeof(sp->msg);
-  pthread_t request_p;
-  for (; ;) {
-        //data num_frames
-        // start = getSystemTime();
-        // printf("start time: %lld ms\n", start);
-        // printf("i=%d\n",i);
-      if(IS_RUNNING){
-        
-        sp = malloc(sizeof(so_sp));//线程中释放process_request
-        sp->from_len = socklen;
-        #ifdef DEBUG
-        printf("before send to request INDEX %d , %lu\n",FRAME_INDEX, getSystemTime());
-        #endif
-        bzero(sp->msg,msg_len);
-        length = recvfrom(SOCK_DATA_QUEST, sp->msg, msg_len, 0,(struct sockaddr *) &sp->from_server, &sp->from_len);
-        if(length<=0){
-          printf("length = %d\n",length);
-          continue;
-        }
-        #ifdef DEBUG
-        printf("sp->msg = %s\n",sp->msg);
-        #endif
-        pthread_create(&request_p,NULL,process_request,sp);
-        pthread_detach(request_p);
-      }else{
-        nanosleep(&SLEEP_TIME,NULL);
-      }
-     
-      // end = getSystemTime();
-      // printf("end time: %lld ms\n", end);
-      // printf("rece buffer = %s timestamp = %d\n",cRecvBuf,0);
-  }
-  
-  /* Send the word to the server */
-  /* Receive the word back from the server */
-  fprintf(stdout, "Received: ");
-  fprintf(stdout, "\n");
-  close(SOCK_DATA_QUEST);
-  return NULL;
-}
 
 void *read_buffer(void *filename){
   // todo  1. 使用广播方式发送命令
@@ -262,33 +194,164 @@ void *read_buffer(void *filename){
   pthread_exit(NULL);
   return NULL;
 }
+void *data_server(void *msg){
+  printf("start data server\n");
+  struct sockaddr_in echoserver;
+  
 
+  /* create what looks like an ordinary UDP socket */  
+  if ((SOCK_DATA_QUEST=socket(AF_INET,SOCK_DGRAM,0)) < 0)   
+  {  
+      perror("socket");  
+      exit(1);  
+  }  
+  printf("msg = %s\n",msg);
+   /* Construct the server sockaddr_in structure */
+  memset(&echoserver, 0, sizeof(echoserver));       /* Clear struct */
+  echoserver.sin_family = AF_INET;                  /* Internet/IP */
+  echoserver.sin_addr.s_addr = inet_addr(LISTEN_IP);  /* IP address */
+  echoserver.sin_port = htons(PORT);       /* server port */
+ 
+  if((bind(SOCK_DATA_QUEST, (struct sockaddr*)&echoserver, sizeof(echoserver))) == -1){
+    perror("bind");
+    exit(1);
+  }else {
+    printf("bind address to socket. %d\n\r",echoserver.sin_port);
 
-int send_broadcast(char *buffer,int len){
-    int brdcfd;
+  }
 
-    if((brdcfd = socket(PF_INET,SOCK_DGRAM,0))==-1){
-         printf("socket failed \n");
-        return -1;
+  //open audio file
+  char cRecvBuf[64]; 
+  int length;
+  int data_len = sizeof(so_play_frame);
+  so_sp *sp;
+  int msg_len = sizeof(sp->msg);
+  pthread_t request_p;
+  for (; ;) {
+        //data num_frames
+        // start = getSystemTime();
+        // printf("start time: %lld ms\n", start);
+        // printf("i=%d\n",i);
+      if(IS_RUNNING){
+        
+        sp = malloc(sizeof(so_sp));//线程中释放process_request
+        sp->from_len = socklen;
+        #ifdef DEBUG
+        printf("before send to request INDEX %d , %lu\n",FRAME_INDEX, getSystemTime());
+        #endif
+        bzero(sp->msg,msg_len);
+        length = recvfrom(SOCK_DATA_QUEST, sp->msg, msg_len, 0,(struct sockaddr *) &sp->from_server, &sp->from_len);
+        if(length<=0){
+          printf("length = %d\n",length);
+          continue;
+        }
+        #ifdef DEBUG
+        printf("sp->msg = %s\n",sp->msg);
+        #endif
+        pthread_create(&request_p,NULL,process_request,sp);
+        pthread_detach(request_p);
+      }else{
+        nanosleep(&SLEEP_TIME,NULL);
+      }
+     
+      // end = getSystemTime();
+      // printf("end time: %lld ms\n", end);
+      // printf("rece buffer = %s timestamp = %d\n",cRecvBuf,0);
+  }
+  
+  /* Send the word to the server */
+  /* Receive the word back from the server */
+  fprintf(stdout, "Received: ");
+  fprintf(stdout, "\n");
+  close(SOCK_DATA_QUEST);
+  return NULL;
+}
+
+char SERVER_IP[128];
+int SOCK_CONTROL;
+
+so_speaker CLIENT_SPEAKER[10];
+int SPEAKER_NUMS = sizeof(CLIENT_SPEAKER)/sizeof(so_speaker);
+//监听广播地址，返回ip地址给客户端
+void *listen_broadcast_find(void *msg){
+    int SOCK_CONTROL;
+    struct sockaddr_in servaddr;
+    socklen_t socklen = sizeof(struct sockaddr_in);
+
+    if ((SOCK_CONTROL=socket(AF_INET,SOCK_DGRAM,0)) < 0)   
+    {  
+        perror("socket");  
+        exit(1);  
+    }  
+    //close hsa_syslogd release 18879 port
+    ///* allow multiple sockets to use the same PORT number */ 
+
+    bzero(&servaddr, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr=INADDR_ANY; 
+    servaddr.sin_port=htons(PORT_B);  
+
+    if(bind(SOCK_CONTROL, (struct sockaddr *)&servaddr, sizeof(servaddr)) == -1)  {
+        perror("bind error");
+        close(SOCK_CONTROL);
+        exit(1);
     }
+    /* use setsockopt() to request that the kernel join a multicast group */  
+    int set = 1;
+    if (setsockopt(SOCK_CONTROL,SOL_SOCKET,SO_REUSEADDR,&set,sizeof(int)) < 0)   
+    {  
+        perror("setsockopt");  
+        exit(1);  
+    }  
+    int length;
+    int recvLen = sizeof(CMD_FIND)+1;
+    char rervBuffer[recvLen];
+    
+    while(1){
+        bzero(rervBuffer, recvLen);
+        length = recvfrom(SOCK_CONTROL, rervBuffer, recvLen, 0,(struct sockaddr *) &servaddr, &socklen);
+        if (length <= 2)
+        {
+            printf("Server Recieve Data error!\n");
+        }else {
+            printf("recv buffer = %s\n",rervBuffer);
 
-    int optval = 1;
-    setsockopt(brdcfd,SOL_SOCKET,SO_BROADCAST,(const char *)&optval, sizeof(int));
+            if(strncmp(rervBuffer,CMD_FIND,recvLen)==0){
+              //  todo //把servaddr ，socklen 写在数组中
+              int i=0;
+              int isExist = 0;
+              int empty = -1;
+              for(i=0;i<sizeof(CLIENT_SPEAKER);i++){
+                 if(CLIENT_SPEAKER[i].addr_len){
+                    if(strncmp(inet_ntoa(CLIENT_SPEAKER[i].address.sin_addr),inet_ntoa(servaddr.sin_addr),sizeof(servaddr.sin_addr))==0){
+                       isExist = 1;
+                       break;
+                    }
+                 }else{
+                  if(empty==-1){
+                    empty = i;
+                  }
+                 }
+              }
+              if(isExist==0){
+                if(empty!=-1){
+                  CLIENT_SPEAKER[empty].address = servaddr;
+                  CLIENT_SPEAKER[empty].address.sin_port = htons(PORT_C);
+                  CLIENT_SPEAKER[empty].addr_len = socklen;
 
-    struct sockaddr_in b_ip;
-    memset(&b_ip,0,sizeof(struct sockaddr_in));
-
-    b_ip.sin_family = AF_INET;
-    b_ip.sin_addr.s_addr = inet_addr(BC_IP);
-    b_ip.sin_port = htons(PORT_C);
-    int sendBytes;
-    if((sendBytes = sendto(brdcfd,buffer,len,0,(struct sockaddr *)&b_ip, sizeof(b_ip))) == -1){
-        printf("sendto fail errno = %d\n",errno);
-        close(brdcfd);
-        return -1;
-    }
-    close(brdcfd);
-    return 0;
+                  sendto(SOCK_CONTROL,SERVER_IP,strlen(SERVER_IP),0,(struct sockaddr *) &servaddr, socklen);
+                }else{
+                  printf("CLIENT_SPEAKER is fill!\n");
+                }
+                
+              }else{
+                  sendto(SOCK_CONTROL,SERVER_IP,strlen(SERVER_IP),0,(struct sockaddr *) &servaddr, socklen);
+              }
+            }
+        }
+     }
+   close(SOCK_CONTROL);
+  return NULL;
 }
 
 void init_playback_r(){
@@ -318,7 +381,7 @@ void init_playback_r(){
 int main(int argc, char *argv[]) {
   
    //printf("2\n");
-  pthread_t server_p,play_p;
+  pthread_t server_p,play_p,find_listen_broadcast_p;
   char *play="-p";
   char *record="-r";
   int type=0;  // 0 表示错误， 1 直接播放  2 表示录制播放
@@ -326,24 +389,27 @@ int main(int argc, char *argv[]) {
   char buf[1024];
   int len = -1;
 
+
   so_play_cmd *play_cmd; 
   play_cmd = malloc(sizeof(so_play_cmd));
 
   //Thread 2
-  init_playback_r();
-  if(argc>1){
+  if(argc>2){
+    int str_len = sizeof(argv[1]);
+    strncpy(SERVER_IP,argv[1],sizeof(SERVER_IP)>sizeof(argv[1])?sizeof(SERVER_IP):sizeof(argv[1]));
+
     //如果是播放音乐，可以先读取音乐，然后发送命令播放
-    if(strncmp(argv[1],play,2)==0){
+    if(strncmp(argv[2],play,2)==0){
         if(argc>2){
          
            type = 1;
         }else{
-           printf("./socast -p filename\n");
+           printf("./socast server_ip -p filename\n");
            return -1;
         }
     }
     //如果是录制，则需要等命令后再开始录制
-    if(strncmp(argv[1],record,2)==0){
+    if(strncmp(argv[2],record,2)==0){
         //录加播放
       type = 2;
       printf("type 2\n");
@@ -351,21 +417,31 @@ int main(int argc, char *argv[]) {
       pthread_detach(play_p);
     }
   }else{
-    printf("./socast -p|r [filename]\n");
+    printf("./socast server_ip -p|r [filename]\n");
     return 0;
   }
+  init_playback_r();
 
+  //启动监听查找的广播
+  pthread_create(&find_listen_broadcast_p,NULL,listen_broadcast_find,NULL);
+  pthread_detach(find_listen_broadcast_p);
 
-   pthread_create(&server_p,NULL,data_server,NULL);
-   pthread_detach(server_p);
-   //Thread 1. 启动一个监听请求的UDP server，处理到LIST中获取frames
-       //接收数据
-       //发送数据
-   // pthread_join(server_p,NULL);
+  //启动数据请求的server
+ pthread_create(&server_p,NULL,data_server,NULL);
+ pthread_detach(server_p);
 
-  
-  
-  
+ //初始化发送命令的socket
+
+ int sock_send_to;
+ struct sockaddr_in send_addr;
+ socklen_t send_addr_len = sizeof(struct sockaddr_in);
+
+  if ((sock_send_to=socket(AF_INET,SOCK_DGRAM,0)) < 0)   
+  {  
+      perror("socket");  
+      exit(1);  
+  }  
+   
   while(1){
       bzero(buf,1024);
       printf("Input key : [start:%d,stop:%d]\n",CMD_START,CMD_STOP);
@@ -377,7 +453,7 @@ int main(int argc, char *argv[]) {
 
       if(len>0){
           buf[len] = '\0';
-          printf("buffer = %s\n",buf);
+          printf("Input key = %s\n",buf);
           if(atoi(buf)==CMD_START){
             if(IS_RUNNING==1){
               printf("Already is running ,please input 'stop'\n");
@@ -391,20 +467,23 @@ int main(int argc, char *argv[]) {
             gettimeofday(&(play_cmd->current_t),NULL);
             play_cmd->current_t.tv_usec = (play_cmd->current_t.tv_usec+40000);
 
-            send_broadcast((char *)play_cmd,sizeof(so_play_cmd));
-            printf(" send_broadcast %lu\n",getSystemTime());
-            send_broadcast((char *)play_cmd,sizeof(so_play_cmd));
-            printf(" send_broadcast %lu\n",getSystemTime());
-            
-            send_broadcast((char *)play_cmd,sizeof(so_play_cmd));
-            printf(" send_broadcast %lu\n",getSystemTime());
-
+            //循环发送已经添加额客户端；
+            int i_len=0;
+            for(i_len=0;i_len<SPEAKER_NUMS;i_len++){
+                int slen ;
+                if(CLIENT_SPEAKER[i_len].addr_len){
+                  send_addr.sin_addr.s_addr=CLIENT_SPEAKER[i_len].address.sin_addr.s_addr; 
+                  printf("ip %s %d\n",inet_ntoa(CLIENT_SPEAKER[i_len].address.sin_addr),CLIENT_SPEAKER[i_len].address.sin_port);
+                  slen = sendto(sock_send_to,play_cmd,sizeof(so_play_cmd),0,(struct sockaddr *)&CLIENT_SPEAKER[i_len].address,CLIENT_SPEAKER[i_len].addr_len);
+                  printf("sendto len = %d\n",slen);
+                }
+            }
 
 
             FRAME_INDEX=0;
             if(type==1){
-                printf(" play %s\n",argv[2]);
-                pthread_create(&play_p,NULL,read_buffer,(void *)argv[2]);  
+                printf(" play %s\n",argv[3]);
+                pthread_create(&play_p,NULL,read_buffer,(void *)argv[3]);  
                 pthread_detach(play_p);
             }else{
                 printf(" record play\n");
@@ -416,11 +495,13 @@ int main(int argc, char *argv[]) {
             stop_record();
             play_cmd->type=CMD_STOP;
             gettimeofday(&(play_cmd->current_t),NULL);
-            send_broadcast((char *)play_cmd,sizeof(so_play_cmd));
-            printf("STOP %d\n",CMD_STOP);
-            send_broadcast((char *)play_cmd,sizeof(so_play_cmd));
-            printf("STOP %d\n",CMD_STOP);
-            send_broadcast((char *)play_cmd,sizeof(so_play_cmd));
+
+            int i_len=0;
+            for(i_len=0;i_len<SPEAKER_NUMS;i_len++){
+                if(CLIENT_SPEAKER[i_len].addr_len){
+                  sendto(sock_send_to,play_cmd,sizeof(so_play_cmd),0,(struct sockaddr *)&CLIENT_SPEAKER[i_len].address,CLIENT_SPEAKER[i_len].addr_len);
+                }
+            }
             printf("STOP %d\n",CMD_STOP);
 
           }else{

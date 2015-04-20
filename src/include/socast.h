@@ -21,6 +21,8 @@
 
 
 #define LISTEN_IP "0.0.0.0"
+#define PORT_B 18884
+
 #define PORT 8883
 
 #define PORT_C 8884
@@ -36,6 +38,9 @@
 
 #define CMD_START 1
 #define CMD_STOP 2
+#define CMD_ADD 0 //增加设备到server中
+
+#define CMD_FIND "find_server"
 
 
 typedef struct so_play_frame_
@@ -60,6 +65,13 @@ typedef struct so_play_server_process_
 	struct sockaddr_in from_server;
 	int from_len;
 } so_sp;
+
+typedef struct so_play_speaker_
+{
+	struct sockaddr_in address;
+	int addr_len;
+} so_speaker;
+
 
 long long getSystemTime();
 void close_playback(snd_pcm_t *PCM_HANDLE);

@@ -8,6 +8,11 @@ speaker
   2. 增加重传是因为前期的数据，有可能失败，通过重传减少和避免丢失。
       因为要求时间较短因此短期内重试可以有效避免传输慢而丢失的问题
 
+   增加自动查找：
+    1. 发送广播，等待回复获取IP  端口PORT_B
+    2. 监听控制端口接收命令控制 起线程一直监听  控制端口PORT_C
+       CMD_START
+       CMD_STOP
 */
 
 #define TIMEOUT 500000  //50 ms
@@ -23,7 +28,7 @@ snd_pcm_t *PCM_HANDLE;
 
 const snd_pcm_uframes_t PCM_FRAME_NUM = MAX_FRAMES/4;
 
-unsigned char *HOST_IP;
+unsigned char HOST_IP[128];
 
 int FRAME_INDEX = 0;
 
@@ -295,11 +300,10 @@ void *time_start(void *msg){
 }
 //1. 监听广播
 void *listent_socket(void *msg){
+    printf("listent_socket \n");
     int sockfd;
     struct sockaddr_in servaddr;
     socklen_t socklen = sizeof(struct sockaddr_in);
-    struct ip_mreq mreq;
-
 
     if ((sockfd=socket(AF_INET,SOCK_DGRAM,0)) < 0)   
     {  
@@ -311,21 +315,23 @@ void *listent_socket(void *msg){
 
     bzero(&servaddr, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr=INADDR_ANY; 
+    servaddr.sin_addr.s_addr= inet_addr(LISTEN_IP); 
     servaddr.sin_port=htons(PORT_C);  
 
     if(bind(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) == -1)  {
         perror("bind error");
         close(sockfd);
         sockfd = -1;
+    }else {
+        printf("bind address to socket. %d\n\r",servaddr.sin_port);
     }
     /* use setsockopt() to request that the kernel join a multicast group */  
-    int set = 1;
-    if (setsockopt(sockfd,SOL_SOCKET,SO_REUSEADDR,&set,sizeof(int)) < 0)   
-    {  
-        perror("setsockopt");  
-        exit(1);  
-    }  
+    // int set = 1;
+    // if (setsockopt(sockfd,SOL_SOCKET,SO_REUSEADDR,&set,sizeof(int)) < 0)   
+    // {  
+    //     perror("setsockopt");  
+    //     exit(1);  
+    // }  
     int length;
     int recvLen = sizeof(so_play_cmd)+1;
     char rervBuffer[recvLen];
@@ -335,6 +341,7 @@ void *listent_socket(void *msg){
     while(1){
         bzero(rervBuffer, recvLen);
         length = recvfrom(sockfd, rervBuffer, recvLen, 0,(struct sockaddr *) &servaddr, &socklen);
+        printf("length = %d\n",length);
         if (length <= 3)
         {
             printf("Server Recieve Data error!\n");
@@ -365,17 +372,94 @@ void *listent_socket(void *msg){
 }
 
 
+//发送广播后接受 server_ip
+
+int send_find_broadcast(){
+    int brdcfd;
+
+    if((brdcfd = socket(PF_INET,SOCK_DGRAM,0))==-1){
+         printf("socket failed \n");
+        return -1;
+    }
+
+    int optval = 1;
+    setsockopt(brdcfd,SOL_SOCKET,SO_BROADCAST,(const char *)&optval, sizeof(int));
+
+    struct sockaddr_in b_ip;
+    memset(&b_ip,0,sizeof(struct sockaddr_in));
+
+    b_ip.sin_family = AF_INET;
+    b_ip.sin_addr.s_addr = inet_addr(BC_IP);
+    b_ip.sin_port = htons(PORT_B);
+    int sendBytes;
+    char buffer[128];
+
+    struct timeval tv;
+    fd_set readfds;
+    int ret;
+
+    tv.tv_sec = 2;
+    tv.tv_usec = 0;
+
+    if((sendBytes = sendto(brdcfd,CMD_FIND,strlen(CMD_FIND),0,(struct sockaddr *)&b_ip, sizeof(b_ip))) == -1){
+            printf("sendto fail errno = %d\n",errno);
+            close(brdcfd);
+            exit(-1);      
+    }
+    while(1){
+        FD_ZERO(&readfds);
+        FD_SET(brdcfd,&readfds);
+
+        ret = select (brdcfd+1,
+                &readfds,
+                NULL,
+                NULL,
+                &tv
+        );
+        if(ret==-1){
+            perror("select error");
+            close(brdcfd);
+            return -1;
+        } else if(!ret){
+            printf("find 2s elapsed. %d\n");
+            tv.tv_sec = 2;
+            tv.tv_usec = 0;
+            if((sendBytes = sendto(brdcfd,CMD_FIND,strlen(CMD_FIND),0,(struct sockaddr *)&b_ip, sizeof(b_ip))) == -1){
+                printf("sendto fail errno = %d\n",errno);
+                close(brdcfd);
+                exit(-1);      
+            }               
+            continue;
+        }
+
+        if(FD_ISSET(brdcfd, &readfds)){
+            bzero(buffer,sizeof(buffer));
+            int len = recv(brdcfd, buffer, sizeof(buffer), 0);
+            if(len<0){
+                continue;
+            }
+            bzero(HOST_IP,sizeof(HOST_IP));
+            strncpy(HOST_IP,buffer,sizeof(buffer));
+            printf("HOST_IP %s\n",HOST_IP);
+            break;
+        }
+    }
+    close(brdcfd);
+    return 0;
+}
+
+
+
 
 int main(int argc,char *argv[]){
 
-    if(argc<2){
-        printf("./speaker (host_ip)\n\n");
-        return 0;
-    }
     //void init_playback(snd_pcm_t *handle,char *device,int type,int format,int access,int channels,int rate,int latency);
-    init_playback_p();
     //指定host ip
-    HOST_IP = argv[1];
+    if(send_find_broadcast()!=0){
+        printf("find server error!\n");
+        return -1;
+    }
+    init_playback_p();
     //Thread2. 发送hostip 去获取数据,放入到FRAME_LIST中
     //Thread1. 监听广播开始获取
 
@@ -385,7 +469,6 @@ int main(int argc,char *argv[]){
     pthread_create(&read_p,NULL,write_to_buffer,NULL);
     pthread_detach(read_p);
     pthread_create(&listen_p,NULL,listent_socket,NULL);
-    
     pthread_join(listen_p,NULL);
    
     close_playback(PCM_HANDLE);
