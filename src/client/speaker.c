@@ -266,9 +266,10 @@ void stop_request_data(){
 long secends=0;
 long usec =0;
 void *time_start(void *msg){
-    
+    #ifdef DEBUG
     printf("1  recv time = ");
     print_timestamp();
+    #endif
     struct timeval current_time;
     // printf("recv seconds = %ld ,useconds = %ld\n",(long) RECV_CMD->current_t.tv_sec, (long)RECV_CMD->current_t.tv_usec);
 
@@ -281,26 +282,32 @@ void *time_start(void *msg){
             usec = usec+secends*1000000;
         }
     }
+    #ifdef DEBUG
     printf("secends = %ld ,usec = %ld\n",secends,usec);
     printf("2  recv time = ");
     print_timestamp();
+    #endif
     const struct timespec spec ={
         .tv_sec = secends,
         .tv_nsec = usec*1000
 
     };
+    #ifdef DEBUG
     printf("3  recv time = ");
     print_timestamp();
+    #endif
     nanosleep(&spec,NULL);
     print_timestamp();
     start_write_pcm();
+    #ifdef DEBUG
     printf("4  recv time = ");
     print_timestamp();
+    #endif
 
 }
-//1. 监听广播
-void *listent_socket(void *msg){
-    printf("listent_socket \n");
+//1. 接收命令
+void *listent_control_socket(void *msg){
+    printf("listent_control_socket \n");
     int sockfd;
     struct sockaddr_in servaddr;
     socklen_t socklen = sizeof(struct sockaddr_in);
@@ -373,7 +380,6 @@ void *listent_socket(void *msg){
 
 
 //发送广播后接受 server_ip
-
 int send_find_broadcast(){
     int brdcfd;
 
@@ -448,6 +454,20 @@ int send_find_broadcast(){
     return 0;
 }
 
+void *heartbeat(void *msg){
+    struct timespec sleep = {
+    .tv_sec = 10,
+    .tv_nsec = 0  //1ms
+
+}; //1us ;
+
+    while(1){
+            nanosleep(&sleep,NULL);
+            send_find_broadcast();
+    }
+    return NULL;
+}
+
 
 
 
@@ -462,14 +482,20 @@ int main(int argc,char *argv[]){
     init_playback_p();
     //Thread2. 发送hostip 去获取数据,放入到FRAME_LIST中
     //Thread1. 监听广播开始获取
+    pthread_t listen_p,request_data_p,read_p,sleep_p;
 
-    pthread_t listen_p,request_data_p,read_p;
+    pthread_create(&sleep_p,NULL,heartbeat,NULL);
+    pthread_detach(sleep_p);
+
+   
     pthread_create(&request_data_p,NULL,request_data,NULL);
     pthread_detach(request_data_p);
     pthread_create(&read_p,NULL,write_to_buffer,NULL);
     pthread_detach(read_p);
-    pthread_create(&listen_p,NULL,listent_socket,NULL);
+    pthread_create(&listen_p,NULL,listent_control_socket,NULL);
     pthread_join(listen_p,NULL);
+
+
    
     close_playback(PCM_HANDLE);
     return 0;
