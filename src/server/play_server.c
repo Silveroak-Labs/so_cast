@@ -332,7 +332,9 @@ void *listen_broadcast_find(void *msg){
                     sprintf(server_ip,"%s",inet_ntoa(servaddr.sin_addr));
                     printf("client_ip = %s, server_ip=%s\n",client_ip,server_ip);
                     if(strncmp(client_ip,server_ip,strlen(client_ip)) == 0){
+                       #ifdef DEBUG
                        printf("Server address = %s already is exist\n",inet_ntoa(servaddr.sin_addr));
+                       #endif
                        isExist = 1;
                        break;
                     }
