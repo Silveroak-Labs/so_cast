@@ -524,6 +524,7 @@ int main(int argc, char *argv[]) {
         //录加播放
       type = 2;
       printf("type 2\n");
+      init_playback_r();
       pthread_create(&play_p,NULL,read_record,NULL);  
       pthread_detach(play_p);
     }
@@ -531,7 +532,7 @@ int main(int argc, char *argv[]) {
     printf("./socast server_ip -p|r [filename]\n");
     return 0;
   }
-  init_playback_r();
+  
 
   //启动监听查找的广播
   pthread_create(&find_listen_broadcast_p,NULL,listen_broadcast_find,NULL);
