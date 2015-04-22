@@ -100,7 +100,7 @@ void *write_to_buffer(void *msg){
                 #endif
                 len = strlen(FRAME_LIST[index].frames);
                 len = len>MAX_FRAMES?MAX_FRAMES:len;
-                FRAME_LIST[index].frames[len+1]='\0';
+                //FRAME_LIST[index].frames[len]='\0';
                 while ((ret = snd_pcm_writei(PCM_HANDLE, FRAME_LIST[index].frames, PCM_FRAME_NUM)) < 0) {
                       snd_pcm_prepare(PCM_HANDLE);
                       fprintf(stderr, "<<<<<<<<<<<<<<< Buffer Underrun >>>>>>>>>>>>>>>\n");
@@ -396,6 +396,7 @@ int send_find_broadcast(){
 
     b_ip.sin_family = AF_INET;
     b_ip.sin_addr.s_addr = inet_addr(BC_IP);
+
     b_ip.sin_port = htons(PORT_B);
     int sendBytes;
     char buffer[128];
@@ -427,7 +428,7 @@ int send_find_broadcast(){
             close(brdcfd);
             return -1;
         } else if(!ret){
-            printf("find 2s elapsed. %d\n");
+            printf("find 10s elapsed. %d\n");
             tv.tv_sec = 10;
             tv.tv_usec = 0;
             if((sendBytes = sendto(brdcfd,CMD_FIND,strlen(CMD_FIND),0,(struct sockaddr *)&b_ip, sizeof(b_ip))) == -1){
@@ -475,6 +476,8 @@ int main(int argc,char *argv[]){
 
     //void init_playback(snd_pcm_t *handle,char *device,int type,int format,int access,int channels,int rate,int latency);
     //指定host ip
+
+
     if(send_find_broadcast()!=0){
         printf("find server error!\n");
         return -1;

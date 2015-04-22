@@ -200,7 +200,7 @@ void *write_to_buffer(void *msg){
                 #endif
                 len = strlen(FRAME_LIST[index].frames);
                 len = len>MAX_FRAMES?MAX_FRAMES:len;
-                FRAME_LIST[index].frames[len+1]='\0';
+                // FRAME_LIST[index].frames[len]='\0';
                 while ((ret = snd_pcm_writei(PCM_HANDLE, FRAME_LIST[index].frames, PCM_FRAME_NUM)) < 0) {
                       snd_pcm_prepare(PCM_HANDLE);
                       fprintf(stderr, "<<<<<<<<<<<<<<< Buffer Underrun >>>>>>>>>>>>>>>\n");

@@ -317,9 +317,9 @@ void *listen_broadcast_find(void *msg){
         {
             printf("Server Recieve Data error!\n");
         }else {
-            printf("recv buffer = %s\n",rervBuffer);
+            printf("recv buffer = %s rblen = %ld , find len = %ld \n",rervBuffer,strlen(rervBuffer),strlen(CMD_FIND));
 
-            if(strncmp(rervBuffer,CMD_FIND,recvLen)==0){
+            if(strncmp(rervBuffer,CMD_FIND,strlen(CMD_FIND))==0){
               //  todo //把servaddr ，socklen 写在数组中
               int i=0;
               int isExist = 0;
@@ -359,6 +359,8 @@ void *listen_broadcast_find(void *msg){
               }else{
                   sendto(SOCK_CONTROL,SERVER_IP,strlen(SERVER_IP),0,(struct sockaddr *) &servaddr, socklen);
               }
+            }else{
+              printf("recv cmd error!\n");
             }
         }
      }
