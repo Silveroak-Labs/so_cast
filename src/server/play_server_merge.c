@@ -237,9 +237,9 @@ void *read_buffer(void *filename){
   int fd;
   int ret;
   fd = open((char *)filename,O_RDONLY);
-  printf("stdout to pcm : filename=%s\n",filename);
+  printf("stdout to pcm : filename=%s\n",(char *)filename);
   if ( fd < 0 ) {
-      printf("open file %s error\n",filename);
+      printf("open file %s error\n", (char *)filename);
   }else{
       so_play_frame *frame;
       for(FRAME_INDEX=0;IS_RUNNING;) {
@@ -288,7 +288,6 @@ void *read_buffer(void *filename){
   //   so_play_frame *data = (so_play_frame *)a->val;
   //   printf("timestamp = %lld frames len = %lu \n frame = %p\n",data->timestamp,sizeof(data->frames),data->frames);
   // }
-  printf("FRAME_LIST LENGTH = %d\n",sizeof(FRAME_LIST)/sizeof(so_play_frame));
    //todo  3. 通知停止
   pthread_exit(NULL);
   return NULL;
@@ -304,7 +303,6 @@ void *data_server(void *msg){
       perror("socket");  
       exit(1);  
   }  
-  printf("msg = %s\n",msg);
    /* Construct the server sockaddr_in structure */
   memset(&echoserver, 0, sizeof(echoserver));       /* Clear struct */
   echoserver.sin_family = AF_INET;                  /* Internet/IP */
@@ -485,8 +483,6 @@ void init_playback_r(){
     }
     //open audio file
     int ret;
-    printf("========== PCM_FRAME_NUM %d\n",PCM_FRAME_NUM);
-
 }
 
 int main(int argc, char *argv[]) {
@@ -574,7 +570,6 @@ int main(int argc, char *argv[]) {
             IS_RUNNING = 1;
               //发送组播到其他speaker 开始播放
             printf(" start %d : ",CMD_START);
-            printf(" start %lu\n",getSystemTime());
             play_cmd->type=CMD_START;
             gettimeofday(&(play_cmd->current_t),NULL);
             play_cmd->current_t.tv_usec = (play_cmd->current_t.tv_usec+40000);
@@ -600,7 +595,6 @@ int main(int argc, char *argv[]) {
             }else{
                 printf(" record play\n");
                 start_record();
-                printf(" pthread_create record_play %lu\n",getSystemTime());
             }
           }else  if(atoi(buf)==CMD_STOP){
               //发送组播到其他speaker 停止播放

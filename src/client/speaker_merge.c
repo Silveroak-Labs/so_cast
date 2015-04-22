@@ -176,7 +176,6 @@ void init_playback_p(){
     }
     //open audio file
     int ret;
-    printf("========== PCM_FRAME_NUM %d\n",PCM_FRAME_NUM);
 
 }
 
@@ -527,7 +526,7 @@ int send_find_broadcast(){
             close(brdcfd);
             return -1;
         } else if(!ret){
-            printf("find 2s elapsed. %d\n");
+            printf("find 2s elapsed.\n");
             tv.tv_sec = 10;
             tv.tv_usec = 0;
             if((sendBytes = sendto(brdcfd,CMD_FIND,strlen(CMD_FIND),0,(struct sockaddr *)&b_ip, sizeof(b_ip))) == -1){
