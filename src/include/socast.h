@@ -33,7 +33,6 @@
 #define MAX_FRAMES 2048 //传输 的数据大小，2048 比较稳定
 
 #define OK_STR "OK"
-#define BC_IP "255.255.255.255"
 //定义命令字符串
 
 #define CMD_START 1

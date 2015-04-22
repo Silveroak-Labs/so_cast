@@ -307,7 +307,7 @@ void *listen_broadcast_find(void *msg){
 
     char client_ip[128];
     char server_ip[128];
-    
+
     while(1){
         bzero(rervBuffer, recvLen);
         length = recvfrom(SOCK_CONTROL, rervBuffer, recvLen, 0,(struct sockaddr *) &servaddr, &socklen);
@@ -317,12 +317,12 @@ void *listen_broadcast_find(void *msg){
         }else {
             printf("recv buffer = %s rblen = %ld , find len = %ld \n",rervBuffer,strlen(rervBuffer),strlen(CMD_FIND));
 
-            if(strncmp(rervBuffer,CMD_FIND,strlen(CMD_FIND))==0){
+            if(strncmp(rervBuffer,CMD_FIND,strlen(rervBuffer))==0){
               //  todo //把servaddr ，socklen 写在数组中
               int i=0;
               int isExist = 0;
               int empty = -1;
-              for(i=0;i<sizeof(CLIENT_SPEAKER);i++){
+              for( i = 0 ; i < SPEAKER_NUMS ; i++ ){
                  if(CLIENT_SPEAKER[i].addr_len){
                     bzero(client_ip,128);
                     bzero(server_ip,128);

@@ -390,10 +390,13 @@ int send_find_broadcast(){
     setsockopt(brdcfd,SOL_SOCKET,SO_BROADCAST,(const char *)&optval, sizeof(int));
 
     struct sockaddr_in b_ip;
+
     memset(&b_ip,0,sizeof(struct sockaddr_in));
 
     b_ip.sin_family = AF_INET;
-    b_ip.sin_addr.s_addr = inet_addr(BC_IP);
+    //b_ip.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+    b_ip.sin_addr.s_addr = inet_addr("10.0.1.255");
+
 
     b_ip.sin_port = htons(PORT_B);
     int sendBytes;

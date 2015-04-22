@@ -33,7 +33,6 @@
 #define MAX_FRAMES 2048 //传输 的数据大小，2048 比较稳定
 
 #define OK_STR "OK"
-#define BC_IP "255.255.255.255"
 //定义命令字符串
 
 #define CMD_START 1
@@ -494,7 +493,9 @@ int send_find_broadcast(){
     memset(&b_ip,0,sizeof(struct sockaddr_in));
 
     b_ip.sin_family = AF_INET;
-    b_ip.sin_addr.s_addr = inet_addr(BC_IP);
+    //b_ip.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+    b_ip.sin_addr.s_addr = inet_addr("10.0.1.255");
+
     b_ip.sin_port = htons(PORT_B);
     int sendBytes;
     char buffer[128];
