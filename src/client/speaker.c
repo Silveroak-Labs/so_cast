@@ -395,8 +395,6 @@ int send_find_broadcast(){
 
     b_ip.sin_family = AF_INET;
     //b_ip.sin_addr.s_addr = htonl(INADDR_BROADCAST);
-    b_ip.sin_addr.s_addr = inet_addr("10.0.1.255");
-
 
     b_ip.sin_port = htons(PORT_B);
     int sendBytes;
@@ -409,11 +407,33 @@ int send_find_broadcast(){
     tv.tv_sec = 10;
     tv.tv_usec = 0;
 
-    if((sendBytes = sendto(brdcfd,CMD_FIND,strlen(CMD_FIND),0,(struct sockaddr *)&b_ip, sizeof(b_ip))) == -1){
-            printf("sendto fail errno = %d\n",errno);
-            close(brdcfd);
-            exit(-1);      
+    int inet_nums = get_nio_nums();
+    if(inet_nums<1){
+        printf("no network interfaces");
+        return -1;
     }
+    so_network_io *NETWORK_IO_S[inet_nums];
+
+    get_network_io(NETWORK_IO_S);
+    printf("inet-nums = %d\n",inet_nums);
+    int ii= 0;
+    for(ii=0;ii<inet_nums;ii++){
+        printf("send to broadcast %s\n",(char*)inet_ntoa(NETWORK_IO_S[ii]->broadcast));
+        if(NETWORK_IO_S[ii]->is_up==1){
+            b_ip.sin_addr.s_addr = NETWORK_IO_S[ii]->broadcast.s_addr;
+
+            if((sendBytes = sendto(brdcfd,CMD_FIND,strlen(CMD_FIND),0,(struct sockaddr *)&b_ip, sizeof(b_ip))) == -1){
+                printf("sendto fail errno = %d\n",errno);
+                close(brdcfd);
+                exit(-1);      
+            }
+        }else{
+            printf("interfaces is down \n");
+        }
+        
+    }
+
+    
     while(1){
         FD_ZERO(&readfds);
         FD_SET(brdcfd,&readfds);
@@ -432,11 +452,23 @@ int send_find_broadcast(){
             printf("find 10s elapsed. \n");
             tv.tv_sec = 10;
             tv.tv_usec = 0;
-            if((sendBytes = sendto(brdcfd,CMD_FIND,strlen(CMD_FIND),0,(struct sockaddr *)&b_ip, sizeof(b_ip))) == -1){
-                printf("sendto fail errno = %d\n",errno);
-                close(brdcfd);
-                exit(-1);      
-            }               
+
+             for(ii=0;ii<inet_nums;ii++){
+                printf("send to broadcast %s\n",(char*)inet_ntoa(NETWORK_IO_S[ii]->broadcast));
+                if(NETWORK_IO_S[ii]->is_up==1){
+                    b_ip.sin_addr.s_addr = NETWORK_IO_S[ii]->broadcast.s_addr;
+
+                    if((sendBytes = sendto(brdcfd,CMD_FIND,strlen(CMD_FIND),0,(struct sockaddr *)&b_ip, sizeof(b_ip))) == -1){
+                        printf("sendto fail errno = %d\n",errno);
+                        close(brdcfd);
+                        exit(-1);      
+                    }
+                }else{
+                    printf("interfaces is down \n");
+                }
+                
+            }
+           
             continue;
         }
 
@@ -458,13 +490,14 @@ int send_find_broadcast(){
 
 void *heartbeat(void *msg){
     struct timespec sleep = {
-    .tv_sec = 10,
-    .tv_nsec = 0  //1ms
+    .tv_sec = 30,
+    .tv_nsec = 0  //nsec
 
-}; //1us ;
+    }; //1us ;
 
     while(1){
             nanosleep(&sleep,NULL);
+            //获取到主机后，直接发送主机
             send_find_broadcast();
     }
     return NULL;
@@ -478,11 +511,11 @@ int main(int argc,char *argv[]){
     //void init_playback(snd_pcm_t *handle,char *device,int type,int format,int access,int channels,int rate,int latency);
     //指定host ip
 
-
     if(send_find_broadcast()!=0){
-        printf("find server error!\n");
+        printf("find device failed\n");
         return -1;
     }
+
     init_playback_p();
     //Thread2. 发送hostip 去获取数据,放入到FRAME_LIST中
     //Thread1. 监听广播开始获取

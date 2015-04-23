@@ -19,6 +19,16 @@
 #include <pthread.h>
 #include <alsa/asoundlib.h> 
 
+#include <net/if.h>
+#include <net/if_arp.h>
+#include <netinet/in.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+
+#include <unistd.h>
+
+#include <arpa/inet.h>
+#include <errno.h>
 
 #define LISTEN_IP "0.0.0.0"
 #define PORT_B 18884
@@ -40,6 +50,8 @@
 #define CMD_ADD 0 //增加设备到server中
 
 #define CMD_FIND "find_server"
+
+#define MAXINTERFACES 16    /* 最大接口数 */
 
 
 typedef struct so_play_frame_
@@ -71,10 +83,24 @@ typedef struct so_play_speaker_
 	int addr_len;
 } so_speaker;
 
+typedef struct so_network_io_
+{
+	char name[64];
+	struct in_addr ip;
+	struct in_addr netmask;
+	struct in_addr broadcast;
+	int is_up;  //1 up 0 down
+} so_network_io;
+
 
 long long getSystemTime();
 void close_playback(snd_pcm_t *PCM_HANDLE);
 void print_timestamp();
+
+int get_nio_nums();
+int get_network_io(so_network_io *buffer[MAXINTERFACES]);
+
+int get_ip(char *name,struct ifreq *ifr);
 
 void Die(char *mess);
 

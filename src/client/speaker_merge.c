@@ -1,5 +1,7 @@
 
 #include <time.h>
+#ifndef _SOCAST_INCLUDE_
+#define _SOCAST_INCLUDE_
 
 #include <stdio.h>
 #include <sys/time.h>
@@ -19,6 +21,16 @@
 #include <pthread.h>
 #include <alsa/asoundlib.h> 
 
+#include <net/if.h>
+#include <net/if_arp.h>
+#include <netinet/in.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+
+#include <unistd.h>
+
+#include <arpa/inet.h>
+#include <errno.h>
 
 #define LISTEN_IP "0.0.0.0"
 #define PORT_B 18884
@@ -40,6 +52,8 @@
 #define CMD_ADD 0 //增加设备到server中
 
 #define CMD_FIND "find_server"
+
+#define MAXINTERFACES 16    /* 最大接口数 */
 
 
 typedef struct so_play_frame_
@@ -70,6 +84,200 @@ typedef struct so_play_speaker_
     struct sockaddr_in address;
     int addr_len;
 } so_speaker;
+
+typedef struct so_network_io_
+{
+    char name[64];
+    struct in_addr ip;
+    struct in_addr netmask;
+    struct in_addr broadcast;
+    int is_up;  //1 up 0 down
+} so_network_io;
+
+
+
+long long getSystemTime() {
+    struct timeb t;
+    ftime(&t);
+    return 1000 * t.time + t.millitm;
+}
+
+void print_timestamp(){
+  struct timeval tv;
+  int ret;
+  ret = gettimeofday(&tv,NULL);
+  #ifdef DEBUG
+    if(!ret){
+      printf("seconds = %ld ,useconds = %ld\n",(long) tv.tv_sec, (long)tv.tv_usec);
+    }
+  #endif
+}
+
+void close_playback(snd_pcm_t *PCM_HANDLE){
+    snd_pcm_prepare(PCM_HANDLE); 
+    snd_pcm_drain(PCM_HANDLE); 
+    snd_pcm_close(PCM_HANDLE);
+    #ifdef DEBUG
+       printf("close_playback\n");
+    #endif
+}
+
+
+void Die(char *mess) { perror(mess); exit(1); }
+
+
+int get_nio_nums(){
+   int fd;
+  int if_len;     /* 接口数量 */
+  struct ifreq buf[MAXINTERFACES];    /* ifreq结构数组 */
+  struct ifconf ifc;   
+  /* 建立IPv4的UDP套接字fd */
+    if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
+    {
+        perror("socket(AF_INET, SOCK_DGRAM, 0)");
+        return -1;
+    }
+ 
+    /* 初始化ifconf结构 */
+    ifc.ifc_len = sizeof(buf);
+    ifc.ifc_buf = (caddr_t) buf;
+ 
+    /* 获得接口列表 */
+    if (ioctl(fd, SIOCGIFCONF, (char *) &ifc) == -1)
+    {
+        perror("SIOCGIFCONF ioctl");
+        close(fd);
+        return -1;
+    }
+ 
+    if_len = ifc.ifc_len / sizeof(struct ifreq); /* 接口数量 */
+    close(fd);
+    return if_len;
+}
+
+int get_network_io(so_network_io *buffer[MAXINTERFACES]){
+    int fd;
+    int if_len;     /* 接口数量 */
+    struct ifreq buf[MAXINTERFACES];    /* ifreq结构数组 */
+    struct ifconf ifc;   
+  /* 建立IPv4的UDP套接字fd */
+    if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
+    {
+        perror("socket(AF_INET, SOCK_DGRAM, 0)");
+        return -1;
+    }
+ 
+    /* 初始化ifconf结构 */
+    ifc.ifc_len = sizeof(buf);
+    ifc.ifc_buf = (caddr_t) buf;
+ 
+    /* 获得接口列表 */
+    if (ioctl(fd, SIOCGIFCONF, (char *) &ifc) == -1)
+    {
+        perror("SIOCGIFCONF ioctl");
+        close(fd);
+        return -1;
+    }
+ 
+    if_len = ifc.ifc_len / sizeof(struct ifreq); /* 接口数量 */
+    int index = 0;
+    for(index=0;index<if_len;index++)
+    {
+        buffer[index] = (so_network_io *)malloc(sizeof(so_network_io));
+        strncpy(buffer[index]->name,buf[index].ifr_name,strlen(buf[index].ifr_name));
+
+        printf("interface name：%s\n", buf[index].ifr_name); /* 接口名称 */
+ 
+        /* 获得接口标志 */
+        if (!(ioctl(fd, SIOCGIFFLAGS, (char *) &buf[index])))
+        {
+            /* 接口状态 */
+            if (buf[index].ifr_flags & IFF_UP)
+            {
+              buffer[index]->is_up = 1;
+              printf("status: UP\n");
+            }
+            else
+            {
+              buffer[index]->is_up = 0;
+              printf("status: DOWN\n");
+            }
+        }
+        else
+        {
+            char str[256];
+            sprintf(str, "SIOCGIFFLAGS ioctl %s", buf[index].ifr_name);
+            perror(str);
+        }
+ 
+ 
+        /* IP地址 */
+        if (!(ioctl(fd, SIOCGIFADDR, (char *) &buf[index])))
+        {
+            buffer[index]->ip = ((struct sockaddr_in*) (&buf[index].ifr_addr))->sin_addr;
+
+            printf("IP :%s\n",
+                    (char*)inet_ntoa(((struct sockaddr_in*) (&buf[index].ifr_addr))->sin_addr));
+        }
+        else
+        {
+            char str[256];
+            sprintf(str, "SIOCGIFADDR ioctl %s", buf[index].ifr_name);
+            perror(str);
+        }
+ 
+        /* 子网掩码 */
+        if (!(ioctl(fd, SIOCGIFNETMASK, (char *) &buf[index])))
+        {
+            buffer[index]->netmask = ((struct sockaddr_in*) (&buf[index].ifr_addr))->sin_addr;
+
+            printf("NETMASK :%s\n",
+                    (char*)inet_ntoa(((struct sockaddr_in*) (&buf[index].ifr_addr))->sin_addr));
+        }
+        else
+        {
+            char str[256];
+            sprintf(str, "SIOCGIFADDR ioctl %s", buf[index].ifr_name);
+            perror(str);
+        }
+ 
+        /* 广播地址 */
+        if (!(ioctl(fd, SIOCGIFBRDADDR, (char *) &buf[index])))
+        {
+            buffer[index]->broadcast = ((struct sockaddr_in*) (&buf[index].ifr_addr))->sin_addr;
+            printf("broadcast:%s\n",
+                    (char*)inet_ntoa(((struct sockaddr_in*) (&buf[index].ifr_addr))->sin_addr));
+        }
+        else
+        {
+            char str[256];
+            sprintf(str, "SIOCGIFADDR ioctl %s", buf[index].ifr_name);
+            perror(str);
+        }
+ 
+    }//–while end
+ 
+    //关闭socket
+    close(fd);
+    return 0;
+}
+
+int get_ip(char *name,struct ifreq *ifr){
+     int inet_sock;
+      inet_sock = socket(AF_INET, SOCK_DGRAM, 0);
+      printf("interface name = %s strlen = %d\n",name,strlen(name));
+
+      strcpy(ifr->ifr_name, name);
+      //SIOCGIFADDR标志代表获取接口地址
+      if (ioctl(inet_sock, SIOCGIFADDR, ifr) <  0){
+          perror("ioctl");
+          return -1;
+      }
+      printf("%s\n", inet_ntoa(((struct sockaddr_in*)&(ifr->ifr_addr))->sin_addr));
+      return 0;
+}
+
+#endif  // _SOCAST_INCLUDE_
 
 
 /**
@@ -123,35 +331,6 @@ so_play_cmd *RECV_CMD;
 int CURRENT_STATUS = CMD_STOP; //2 stop 1 start
 
 
-long long getSystemTime() {
-    struct timeb t;
-    ftime(&t);
-    return 1000 * t.time + t.millitm;
-}
-
-void print_timestamp(){
-  struct timeval tv;
-  int ret;
-  ret = gettimeofday(&tv,NULL);
-  #ifdef DEBUG
-    if(!ret){
-      printf("seconds = %ld ,useconds = %ld\n",(long) tv.tv_sec, (long)tv.tv_usec);
-    }
-  #endif
-}
-
-void close_playback(snd_pcm_t *PCM_HANDLE){
-    snd_pcm_prepare(PCM_HANDLE); 
-    snd_pcm_drain(PCM_HANDLE); 
-    snd_pcm_close(PCM_HANDLE);
-    #ifdef DEBUG
-       printf("close_playback\n");
-    #endif
-}
-
-
-void Die(char *mess) { perror(mess); exit(1); }
-
 /**
    初始化 pcm 
 */
@@ -175,7 +354,6 @@ void init_playback_p(){
     }
     //open audio file
     int ret;
-
 }
 
 
@@ -198,7 +376,7 @@ void *write_to_buffer(void *msg){
                 #endif
                 len = strlen(FRAME_LIST[index].frames);
                 len = len>MAX_FRAMES?MAX_FRAMES:len;
-                // FRAME_LIST[index].frames[len]='\0';
+                //FRAME_LIST[index].frames[len]='\0';
                 while ((ret = snd_pcm_writei(PCM_HANDLE, FRAME_LIST[index].frames, PCM_FRAME_NUM)) < 0) {
                       snd_pcm_prepare(PCM_HANDLE);
                       fprintf(stderr, "<<<<<<<<<<<<<<< Buffer Underrun >>>>>>>>>>>>>>>\n");
@@ -490,11 +668,11 @@ int send_find_broadcast(){
     setsockopt(brdcfd,SOL_SOCKET,SO_BROADCAST,(const char *)&optval, sizeof(int));
 
     struct sockaddr_in b_ip;
+
     memset(&b_ip,0,sizeof(struct sockaddr_in));
 
     b_ip.sin_family = AF_INET;
     //b_ip.sin_addr.s_addr = htonl(INADDR_BROADCAST);
-    b_ip.sin_addr.s_addr = inet_addr("10.0.1.255");
 
     b_ip.sin_port = htons(PORT_B);
     int sendBytes;
@@ -507,11 +685,33 @@ int send_find_broadcast(){
     tv.tv_sec = 10;
     tv.tv_usec = 0;
 
-    if((sendBytes = sendto(brdcfd,CMD_FIND,strlen(CMD_FIND),0,(struct sockaddr *)&b_ip, sizeof(b_ip))) == -1){
-            printf("sendto fail errno = %d\n",errno);
-            close(brdcfd);
-            exit(-1);      
+    int inet_nums = get_nio_nums();
+    if(inet_nums<1){
+        printf("no network interfaces");
+        return -1;
     }
+    so_network_io *NETWORK_IO_S[inet_nums];
+
+    get_network_io(NETWORK_IO_S);
+    printf("inet-nums = %d\n",inet_nums);
+    int ii= 0;
+    for(ii=0;ii<inet_nums;ii++){
+        printf("send to broadcast %s\n",(char*)inet_ntoa(NETWORK_IO_S[ii]->broadcast));
+        if(NETWORK_IO_S[ii]->is_up==1){
+            b_ip.sin_addr.s_addr = NETWORK_IO_S[ii]->broadcast.s_addr;
+
+            if((sendBytes = sendto(brdcfd,CMD_FIND,strlen(CMD_FIND),0,(struct sockaddr *)&b_ip, sizeof(b_ip))) == -1){
+                printf("sendto fail errno = %d\n",errno);
+                close(brdcfd);
+                exit(-1);      
+            }
+        }else{
+            printf("interfaces is down \n");
+        }
+        
+    }
+
+    
     while(1){
         FD_ZERO(&readfds);
         FD_SET(brdcfd,&readfds);
@@ -527,14 +727,26 @@ int send_find_broadcast(){
             close(brdcfd);
             return -1;
         } else if(!ret){
-            printf("find 2s elapsed.\n");
+            printf("find 10s elapsed. \n");
             tv.tv_sec = 10;
             tv.tv_usec = 0;
-            if((sendBytes = sendto(brdcfd,CMD_FIND,strlen(CMD_FIND),0,(struct sockaddr *)&b_ip, sizeof(b_ip))) == -1){
-                printf("sendto fail errno = %d\n",errno);
-                close(brdcfd);
-                exit(-1);      
-            }               
+
+             for(ii=0;ii<inet_nums;ii++){
+                printf("send to broadcast %s\n",(char*)inet_ntoa(NETWORK_IO_S[ii]->broadcast));
+                if(NETWORK_IO_S[ii]->is_up==1){
+                    b_ip.sin_addr.s_addr = NETWORK_IO_S[ii]->broadcast.s_addr;
+
+                    if((sendBytes = sendto(brdcfd,CMD_FIND,strlen(CMD_FIND),0,(struct sockaddr *)&b_ip, sizeof(b_ip))) == -1){
+                        printf("sendto fail errno = %d\n",errno);
+                        close(brdcfd);
+                        exit(-1);      
+                    }
+                }else{
+                    printf("interfaces is down \n");
+                }
+                
+            }
+           
             continue;
         }
 
@@ -556,13 +768,14 @@ int send_find_broadcast(){
 
 void *heartbeat(void *msg){
     struct timespec sleep = {
-    .tv_sec = 10,
-    .tv_nsec = 0  //1ms
+    .tv_sec = 30,
+    .tv_nsec = 0  //nsec
 
-}; //1us ;
+    }; //1us ;
 
     while(1){
             nanosleep(&sleep,NULL);
+            //获取到主机后，直接发送主机
             send_find_broadcast();
     }
     return NULL;
@@ -575,10 +788,12 @@ int main(int argc,char *argv[]){
 
     //void init_playback(snd_pcm_t *handle,char *device,int type,int format,int access,int channels,int rate,int latency);
     //指定host ip
+
     if(send_find_broadcast()!=0){
-        printf("find server error!\n");
+        printf("find device failed\n");
         return -1;
     }
+
     init_playback_p();
     //Thread2. 发送hostip 去获取数据,放入到FRAME_LIST中
     //Thread1. 监听广播开始获取

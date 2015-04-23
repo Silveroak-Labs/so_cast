@@ -1,5 +1,4 @@
-#include <arpa/inet.h>
-#include <errno.h>
+
 #include "socast.h"
 
 /**
@@ -406,19 +405,23 @@ int main(int argc, char *argv[]) {
 
   so_play_cmd *play_cmd; 
   play_cmd = malloc(sizeof(so_play_cmd));
-
+  struct ifreq *ifr_localhost=(struct ifreq *)malloc(sizeof(struct ifreq));
   //Thread 2
   if(argc>2){
-    int str_len = sizeof(argv[1]);
-    strncpy(SERVER_IP,argv[1],sizeof(SERVER_IP)>sizeof(argv[1])?sizeof(SERVER_IP):sizeof(argv[1]));
-
+    if(get_ip(argv[1],ifr_localhost)!=0){
+      printf("input interface name is error\n");
+      return -1;
+    }
+    bzero(SERVER_IP,128);
+    printf("localhost = %s\n", inet_ntoa(((struct sockaddr_in*)&(ifr_localhost->ifr_addr))->sin_addr));
+    strcpy(SERVER_IP,inet_ntoa(((struct sockaddr_in*)&(ifr_localhost->ifr_addr))->sin_addr));
     //如果是播放音乐，可以先读取音乐，然后发送命令播放
     if(strncmp(argv[2],play,2)==0){
         if(argc>2){
          
            type = 1;
         }else{
-           printf("./socast server_ip -p filename\n");
+           printf("./socast interface -p filename\n");
            return -1;
         }
     }
@@ -432,7 +435,7 @@ int main(int argc, char *argv[]) {
       pthread_detach(play_p);
     }
   }else{
-    printf("./socast server_ip -p|r [filename]\n");
+    printf("./socast interface -p|r [filename]\n");
     return 0;
   }
   
@@ -523,6 +526,7 @@ int main(int argc, char *argv[]) {
         // printf("read:%s\n",buf);
       }
   }
+  free(ifr_localhost);
   close_playback(PCM_HANDLE);
   return 0;
 }

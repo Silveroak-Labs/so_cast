@@ -1,5 +1,7 @@
-#include <arpa/inet.h>
-#include <errno.h>
+
+#ifndef _SOCAST_INCLUDE_
+#define _SOCAST_INCLUDE_
+
 #include <stdio.h>
 #include <sys/time.h>
 #include <sys/socket.h>
@@ -18,6 +20,16 @@
 #include <pthread.h>
 #include <alsa/asoundlib.h> 
 
+#include <net/if.h>
+#include <net/if_arp.h>
+#include <netinet/in.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+
+#include <unistd.h>
+
+#include <arpa/inet.h>
+#include <errno.h>
 
 #define LISTEN_IP "0.0.0.0"
 #define PORT_B 18884
@@ -32,7 +44,6 @@
 #define MAX_FRAMES 2048 //传输 的数据大小，2048 比较稳定
 
 #define OK_STR "OK"
-#define BC_IP "255.255.255.255"
 //定义命令字符串
 
 #define CMD_START 1
@@ -40,6 +51,8 @@
 #define CMD_ADD 0 //增加设备到server中
 
 #define CMD_FIND "find_server"
+
+#define MAXINTERFACES 16    /* 最大接口数 */
 
 
 typedef struct so_play_frame_
@@ -70,6 +83,200 @@ typedef struct so_play_speaker_
   struct sockaddr_in address;
   int addr_len;
 } so_speaker;
+
+typedef struct so_network_io_
+{
+  char name[64];
+  struct in_addr ip;
+  struct in_addr netmask;
+  struct in_addr broadcast;
+  int is_up;  //1 up 0 down
+} so_network_io;
+
+
+long long getSystemTime() {
+    struct timeb t;
+    ftime(&t);
+    return 1000 * t.time + t.millitm;
+}
+
+void print_timestamp(){
+  struct timeval tv;
+  int ret;
+  ret = gettimeofday(&tv,NULL);
+  #ifdef DEBUG
+    if(!ret){
+      printf("seconds = %ld ,useconds = %ld\n",(long) tv.tv_sec, (long)tv.tv_usec);
+    }
+  #endif
+}
+
+void close_playback(snd_pcm_t *PCM_HANDLE){
+    snd_pcm_prepare(PCM_HANDLE); 
+    snd_pcm_drain(PCM_HANDLE); 
+    snd_pcm_close(PCM_HANDLE);
+    #ifdef DEBUG
+       printf("close_playback\n");
+    #endif
+}
+
+
+void Die(char *mess) { perror(mess); exit(1); }
+
+
+int get_nio_nums(){
+   int fd;
+  int if_len;     /* 接口数量 */
+  struct ifreq buf[MAXINTERFACES];    /* ifreq结构数组 */
+  struct ifconf ifc;   
+  /* 建立IPv4的UDP套接字fd */
+    if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
+    {
+        perror("socket(AF_INET, SOCK_DGRAM, 0)");
+        return -1;
+    }
+ 
+    /* 初始化ifconf结构 */
+    ifc.ifc_len = sizeof(buf);
+    ifc.ifc_buf = (caddr_t) buf;
+ 
+    /* 获得接口列表 */
+    if (ioctl(fd, SIOCGIFCONF, (char *) &ifc) == -1)
+    {
+        perror("SIOCGIFCONF ioctl");
+        close(fd);
+        return -1;
+    }
+ 
+    if_len = ifc.ifc_len / sizeof(struct ifreq); /* 接口数量 */
+    close(fd);
+    return if_len;
+}
+
+int get_network_io(so_network_io *buffer[MAXINTERFACES]){
+    int fd;
+    int if_len;     /* 接口数量 */
+    struct ifreq buf[MAXINTERFACES];    /* ifreq结构数组 */
+    struct ifconf ifc;   
+  /* 建立IPv4的UDP套接字fd */
+    if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
+    {
+        perror("socket(AF_INET, SOCK_DGRAM, 0)");
+        return -1;
+    }
+ 
+    /* 初始化ifconf结构 */
+    ifc.ifc_len = sizeof(buf);
+    ifc.ifc_buf = (caddr_t) buf;
+ 
+    /* 获得接口列表 */
+    if (ioctl(fd, SIOCGIFCONF, (char *) &ifc) == -1)
+    {
+        perror("SIOCGIFCONF ioctl");
+        close(fd);
+        return -1;
+    }
+ 
+    if_len = ifc.ifc_len / sizeof(struct ifreq); /* 接口数量 */
+    int index = 0;
+    for(index=0;index<if_len;index++)
+    {
+        buffer[index] = (so_network_io *)malloc(sizeof(so_network_io));
+        strncpy(buffer[index]->name,buf[index].ifr_name,strlen(buf[index].ifr_name));
+
+        printf("interface name：%s\n", buf[index].ifr_name); /* 接口名称 */
+ 
+        /* 获得接口标志 */
+        if (!(ioctl(fd, SIOCGIFFLAGS, (char *) &buf[index])))
+        {
+            /* 接口状态 */
+            if (buf[index].ifr_flags & IFF_UP)
+            {
+              buffer[index]->is_up = 1;
+              printf("status: UP\n");
+            }
+            else
+            {
+              buffer[index]->is_up = 0;
+              printf("status: DOWN\n");
+            }
+        }
+        else
+        {
+            char str[256];
+            sprintf(str, "SIOCGIFFLAGS ioctl %s", buf[index].ifr_name);
+            perror(str);
+        }
+ 
+ 
+        /* IP地址 */
+        if (!(ioctl(fd, SIOCGIFADDR, (char *) &buf[index])))
+        {
+            buffer[index]->ip = ((struct sockaddr_in*) (&buf[index].ifr_addr))->sin_addr;
+
+            printf("IP :%s\n",
+                    (char*)inet_ntoa(((struct sockaddr_in*) (&buf[index].ifr_addr))->sin_addr));
+        }
+        else
+        {
+            char str[256];
+            sprintf(str, "SIOCGIFADDR ioctl %s", buf[index].ifr_name);
+            perror(str);
+        }
+ 
+        /* 子网掩码 */
+        if (!(ioctl(fd, SIOCGIFNETMASK, (char *) &buf[index])))
+        {
+            buffer[index]->netmask = ((struct sockaddr_in*) (&buf[index].ifr_addr))->sin_addr;
+
+            printf("NETMASK :%s\n",
+                    (char*)inet_ntoa(((struct sockaddr_in*) (&buf[index].ifr_addr))->sin_addr));
+        }
+        else
+        {
+            char str[256];
+            sprintf(str, "SIOCGIFADDR ioctl %s", buf[index].ifr_name);
+            perror(str);
+        }
+ 
+        /* 广播地址 */
+        if (!(ioctl(fd, SIOCGIFBRDADDR, (char *) &buf[index])))
+        {
+            buffer[index]->broadcast = ((struct sockaddr_in*) (&buf[index].ifr_addr))->sin_addr;
+            printf("broadcast:%s\n",
+                    (char*)inet_ntoa(((struct sockaddr_in*) (&buf[index].ifr_addr))->sin_addr));
+        }
+        else
+        {
+            char str[256];
+            sprintf(str, "SIOCGIFADDR ioctl %s", buf[index].ifr_name);
+            perror(str);
+        }
+ 
+    }//–while end
+ 
+    //关闭socket
+    close(fd);
+    return 0;
+}
+
+int get_ip(char *name,struct ifreq *ifr){
+     int inet_sock;
+      inet_sock = socket(AF_INET, SOCK_DGRAM, 0);
+      printf("interface name = %s strlen = %d\n",name,strlen(name));
+
+      strcpy(ifr->ifr_name, name);
+      //SIOCGIFADDR标志代表获取接口地址
+      if (ioctl(inet_sock, SIOCGIFADDR, ifr) <  0){
+          perror("ioctl");
+          return -1;
+      }
+      printf("%s\n", inet_ntoa(((struct sockaddr_in*)&(ifr->ifr_addr))->sin_addr));
+      return 0;
+}
+
+
+#endif  // _SOCAST_INCLUDE_
 
 
 /**
@@ -113,35 +320,6 @@ int SOCK_DATA_QUEST;
 socklen_t socklen = sizeof(struct sockaddr_in);
 
 int S_MAX = 0;
-
-long long getSystemTime() {
-    struct timeb t;
-    ftime(&t);
-    return 1000 * t.time + t.millitm;
-}
-
-void print_timestamp(){
-  struct timeval tv;
-  int ret;
-  ret = gettimeofday(&tv,NULL);
-  #ifdef DEBUG
-    if(!ret){
-      printf("seconds = %ld ,useconds = %ld\n",(long) tv.tv_sec, (long)tv.tv_usec);
-    }
-  #endif
-}
-
-void close_playback(snd_pcm_t *PCM_HANDLE){
-    snd_pcm_prepare(PCM_HANDLE); 
-    snd_pcm_drain(PCM_HANDLE); 
-    snd_pcm_close(PCM_HANDLE);
-    #ifdef DEBUG
-       printf("close_playback\n");
-    #endif
-}
-
-
-void Die(char *mess) { perror(mess); exit(1); }
 
 
 void *read_record(void *msg){
@@ -192,42 +370,6 @@ void stop_record(){
 }
 
 
-void *process_request(void *msg){
-   //todo fork 处理
-    // printf("data = %s len = %lu\n",frames->frames,sizeof(frames->frames));
-    int data_len = sizeof(so_play_frame);
-    so_sp *sp = (so_sp *)msg;
-    int recIndex = atoi(sp->msg);
-    #ifdef DEBUG
-    printf("new thread ");
-    print_timestamp();
-    #endif
-    while(IS_RUNNING){
-       if(recIndex < FRAME_INDEX || (recIndex-FRAME_INDEX)>(MAX_INDEX-10)){
-          #ifdef DEBUG
-          printf("request index %d <= FRAME_INDEX %d\n",recIndex,FRAME_INDEX);
-          #endif
-          while((sendto(SOCK_DATA_QUEST, &FRAME_LIST[recIndex], data_len, 0, (struct sockaddr *)&sp->from_server, socklen)<0) && IS_RUNNING){
-             perror("sendto+");  
-             print_timestamp();
-          }
-          #ifdef DEBUG
-          printf("after send to request INDEX %d , %lu\n",FRAME_INDEX, getSystemTime());
-          #endif
-
-          break;
-       }
-    }
-    free(msg);
-    #ifdef DEBUG
-
-    printf("1end thread %d  ",pthread_self());
-    
-    print_timestamp();
-    #endif
-    pthread_exit(NULL);
-    return NULL;
-}
 
 
 
@@ -239,7 +381,7 @@ void *read_buffer(void *filename){
   fd = open((char *)filename,O_RDONLY);
   printf("stdout to pcm : filename=%s\n",(char *)filename);
   if ( fd < 0 ) {
-      printf("open file %s error\n", (char *)filename);
+      printf("open file %s error\n",(char *)filename);
   }else{
       so_play_frame *frame;
       for(FRAME_INDEX=0;IS_RUNNING;) {
@@ -292,6 +434,44 @@ void *read_buffer(void *filename){
   pthread_exit(NULL);
   return NULL;
 }
+
+void *process_request(void *msg){
+   //todo fork 处理
+    // printf("data = %s len = %lu\n",frames->frames,sizeof(frames->frames));
+    int data_len = sizeof(so_play_frame);
+    so_sp *sp = (so_sp *)msg;
+    int recIndex = atoi(sp->msg);
+    #ifdef DEBUG
+    printf("new thread ");
+    print_timestamp();
+    #endif
+    while(IS_RUNNING){
+       if(recIndex < FRAME_INDEX || (recIndex-FRAME_INDEX)>(MAX_INDEX-10)){
+          #ifdef DEBUG
+          printf("request index %d <= FRAME_INDEX %d\n",recIndex,FRAME_INDEX);
+          #endif
+          while((sendto(SOCK_DATA_QUEST, &FRAME_LIST[recIndex], data_len, 0, (struct sockaddr *)&sp->from_server, socklen)<0) && IS_RUNNING){
+             perror("sendto+");  
+             print_timestamp();
+          }
+          #ifdef DEBUG
+          printf("after send to request INDEX %d , %lu\n",FRAME_INDEX, getSystemTime());
+          #endif
+
+          break;
+       }
+    }
+    free(msg);
+    #ifdef DEBUG
+
+    printf("1end thread %d  ",pthread_self());
+    
+    print_timestamp();
+    #endif
+    pthread_exit(NULL);
+    return NULL;
+}
+
 void *data_server(void *msg){
   printf("start data server\n");
   struct sockaddr_in echoserver;
@@ -407,6 +587,7 @@ void *listen_broadcast_find(void *msg){
     char client_ip[128];
     char server_ip[128];
 
+
     while(1){
         bzero(rervBuffer, recvLen);
         length = recvfrom(SOCK_CONTROL, rervBuffer, recvLen, 0,(struct sockaddr *) &servaddr, &socklen);
@@ -421,8 +602,7 @@ void *listen_broadcast_find(void *msg){
               int i=0;
               int isExist = 0;
               int empty = -1;
-
-              for(i=0;i< SPEAKER_NUMS ;i++){
+              for( i = 0 ; i < SPEAKER_NUMS ; i++ ){
                  if(CLIENT_SPEAKER[i].addr_len){
                     bzero(client_ip,128);
                     bzero(server_ip,128);
@@ -457,6 +637,8 @@ void *listen_broadcast_find(void *msg){
               }else{
                   sendto(SOCK_CONTROL,SERVER_IP,strlen(SERVER_IP),0,(struct sockaddr *) &servaddr, socklen);
               }
+            }else{
+              printf("recv cmd error!\n");
             }
         }
      }
@@ -484,6 +666,7 @@ void init_playback_r(){
     }
     //open audio file
     int ret;
+
 }
 
 int main(int argc, char *argv[]) {
@@ -500,19 +683,23 @@ int main(int argc, char *argv[]) {
 
   so_play_cmd *play_cmd; 
   play_cmd = malloc(sizeof(so_play_cmd));
-
+  struct ifreq *ifr_localhost=(struct ifreq *)malloc(sizeof(struct ifreq));
   //Thread 2
   if(argc>2){
-    int str_len = sizeof(argv[1]);
-    strncpy(SERVER_IP,argv[1],sizeof(SERVER_IP)>sizeof(argv[1])?sizeof(SERVER_IP):sizeof(argv[1]));
-
+    if(get_ip(argv[1],ifr_localhost)!=0){
+      printf("input interface name is error\n");
+      return -1;
+    }
+    bzero(SERVER_IP,128);
+    printf("localhost = %s\n", inet_ntoa(((struct sockaddr_in*)&(ifr_localhost->ifr_addr))->sin_addr));
+    strcpy(SERVER_IP,inet_ntoa(((struct sockaddr_in*)&(ifr_localhost->ifr_addr))->sin_addr));
     //如果是播放音乐，可以先读取音乐，然后发送命令播放
     if(strncmp(argv[2],play,2)==0){
         if(argc>2){
          
            type = 1;
         }else{
-           printf("./socast server_ip -p filename\n");
+           printf("./socast interface -p filename\n");
            return -1;
         }
     }
@@ -520,13 +707,13 @@ int main(int argc, char *argv[]) {
     if(strncmp(argv[2],record,2)==0){
         //录加播放
       type = 2;
-      printf("type 2\n");
       init_playback_r();
+      printf("type 2\n");
       pthread_create(&play_p,NULL,read_record,NULL);  
       pthread_detach(play_p);
     }
   }else{
-    printf("./socast server_ip -p|r [filename]\n");
+    printf("./socast interface -p|r [filename]\n");
     return 0;
   }
   
@@ -617,6 +804,7 @@ int main(int argc, char *argv[]) {
         // printf("read:%s\n",buf);
       }
   }
+  free(ifr_localhost);
   close_playback(PCM_HANDLE);
   return 0;
 }
