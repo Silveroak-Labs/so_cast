@@ -401,7 +401,7 @@ void *listen_broadcast_find(void *msg){
         exit(1);  
     }  
     int length;
-    int recvLen = sizeof(CMD_FIND)+1;
+    int recvLen = strlen(CMD_FIND);
     char rervBuffer[recvLen];
 
     char client_ip[128];
@@ -416,7 +416,7 @@ void *listen_broadcast_find(void *msg){
         }else {
             printf("recv buffer = %s rblen = %ld , find len = %ld \n",rervBuffer,strlen(rervBuffer),strlen(CMD_FIND));
 
-            if(strncmp(rervBuffer,CMD_FIND,strlen(rervBuffer))==0){
+            if(strncmp(rervBuffer,CMD_FIND,recvLen-1)==0){
               //  todo //把servaddr ，socklen 写在数组中
               int i=0;
               int isExist = 0;

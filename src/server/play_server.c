@@ -93,42 +93,6 @@ void stop_record(){
 }
 
 
-void *process_request(void *msg){
-   //todo fork 处理
-    // printf("data = %s len = %lu\n",frames->frames,sizeof(frames->frames));
-    int data_len = sizeof(so_play_frame);
-    so_sp *sp = (so_sp *)msg;
-    int recIndex = atoi(sp->msg);
-    #ifdef DEBUG
-    printf("new thread ");
-    print_timestamp();
-    #endif
-    while(IS_RUNNING){
-       if(recIndex < FRAME_INDEX || (recIndex-FRAME_INDEX)>(MAX_INDEX-10)){
-          #ifdef DEBUG
-          printf("request index %d <= FRAME_INDEX %d\n",recIndex,FRAME_INDEX);
-          #endif
-          while((sendto(SOCK_DATA_QUEST, &FRAME_LIST[recIndex], data_len, 0, (struct sockaddr *)&sp->from_server, socklen)<0) && IS_RUNNING){
-             perror("sendto+");  
-             print_timestamp();
-          }
-          #ifdef DEBUG
-          printf("after send to request INDEX %d , %lu\n",FRAME_INDEX, getSystemTime());
-          #endif
-
-          break;
-       }
-    }
-    free(msg);
-    #ifdef DEBUG
-
-    printf("1end thread %d  ",pthread_self());
-    
-    print_timestamp();
-    #endif
-    pthread_exit(NULL);
-    return NULL;
-}
 
 
 
@@ -193,6 +157,44 @@ void *read_buffer(void *filename){
   pthread_exit(NULL);
   return NULL;
 }
+
+void *process_request(void *msg){
+   //todo fork 处理
+    // printf("data = %s len = %lu\n",frames->frames,sizeof(frames->frames));
+    int data_len = sizeof(so_play_frame);
+    so_sp *sp = (so_sp *)msg;
+    int recIndex = atoi(sp->msg);
+    #ifdef DEBUG
+    printf("new thread ");
+    print_timestamp();
+    #endif
+    while(IS_RUNNING){
+       if(recIndex < FRAME_INDEX || (recIndex-FRAME_INDEX)>(MAX_INDEX-10)){
+          #ifdef DEBUG
+          printf("request index %d <= FRAME_INDEX %d\n",recIndex,FRAME_INDEX);
+          #endif
+          while((sendto(SOCK_DATA_QUEST, &FRAME_LIST[recIndex], data_len, 0, (struct sockaddr *)&sp->from_server, socklen)<0) && IS_RUNNING){
+             perror("sendto+");  
+             print_timestamp();
+          }
+          #ifdef DEBUG
+          printf("after send to request INDEX %d , %lu\n",FRAME_INDEX, getSystemTime());
+          #endif
+
+          break;
+       }
+    }
+    free(msg);
+    #ifdef DEBUG
+
+    printf("1end thread %d  ",pthread_self());
+    
+    print_timestamp();
+    #endif
+    pthread_exit(NULL);
+    return NULL;
+}
+
 void *data_server(void *msg){
   printf("start data server\n");
   struct sockaddr_in echoserver;
@@ -302,11 +304,12 @@ void *listen_broadcast_find(void *msg){
         exit(1);  
     }  
     int length;
-    int recvLen = sizeof(CMD_FIND)+1;
+    int recvLen = strlen(CMD_FIND);
     char rervBuffer[recvLen];
 
     char client_ip[128];
     char server_ip[128];
+
 
     while(1){
         bzero(rervBuffer, recvLen);
@@ -317,7 +320,7 @@ void *listen_broadcast_find(void *msg){
         }else {
             printf("recv buffer = %s rblen = %ld , find len = %ld \n",rervBuffer,strlen(rervBuffer),strlen(CMD_FIND));
 
-            if(strncmp(rervBuffer,CMD_FIND,strlen(rervBuffer))==0){
+            if(strncmp(rervBuffer,CMD_FIND,recvLen-1)==0){
               //  todo //把servaddr ，socklen 写在数组中
               int i=0;
               int isExist = 0;
