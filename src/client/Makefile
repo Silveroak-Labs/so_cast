@@ -1,15 +1,15 @@
 LOCAL_I=../include
 LIB_I=../lib
 #INCLUDES=-I/usr/include -I../include -I../lib
-INCLUDES=-I/usr/include -I../include
+INCLUDES=-I../include
 
 
 #APR_CFG=$(apr-1-config --cflags --cppflags --includes --link-ld)
 
 #SOCAST_LDFLAGS=-lpthread -rdynamic -ldl
-SOCAST_LDFLAGS=-pthread -lasound
+SOCAST_LDFLAGS=-pthread -lasound -ldl -lrt -lm
 
-CC=gcc
+CC=mipsel-openwrt-linux-gcc
 
 CFLAGS=$(SOCAST_LDFLAGS) $(INCLUDES)
 

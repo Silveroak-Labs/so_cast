@@ -1,9 +1,10 @@
 LOCAL_I=../include
-INCLUDES=-I/usr/include -I../include
+//INCLUDES=-I/usr/include -I../include
+INCLUDES=-I../include
 
-SOCAST_LDFLAGS=-pthread -lasound
+SOCAST_LDFLAGS=-pthread -lasound -ldl -lrt -lm 
 
-CC=gcc
+CC=mipsel-openwrt-linux-gcc
 
 
 CFLAGS=$(SOCAST_LDFLAGS) $(INCLUDES)
