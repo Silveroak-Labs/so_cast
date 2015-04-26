@@ -20,10 +20,11 @@ speaker
 
 #define RATE 44100
 #define CHANNELS 2
-#define LATENCY 50000
+#define LATENCY 60000
 
 static char *PCM_DEVICE = "default";                        /* playback PCM_DEVICE */
-
+//读取tsf timetamp的句柄
+int TSF_FD = -1;
 snd_pcm_t *PCM_HANDLE;
 
 const snd_pcm_uframes_t PCM_FRAME_NUM = MAX_FRAMES/4;
@@ -91,28 +92,24 @@ void *write_to_buffer(void *msg){
     while(1){
         // printf("index = %d ,node = %p , node->val = %p, frames = %s\n",index,node, node->val, ((so_play_frame *)node->val)->frames);
         if(IS_WRITE_TO_PCM){
-            if(index<FRAME_INDEX || (index>=FRAME_INDEX && s_max!=S_MAX)){
                 #ifdef DEBUG
-                printf("wirte to buffer index %d , timestamp %lu\n",index, getSystemTime());
-                printf("frames len %lu\n",strlen(FRAME_LIST[index].frames));
-                #endif
-                len = strlen(FRAME_LIST[index].frames);
-                len = len>MAX_FRAMES?MAX_FRAMES:len;
-                //FRAME_LIST[index].frames[len]='\0';
-                while ((ret = snd_pcm_writei(PCM_HANDLE, FRAME_LIST[index].frames, PCM_FRAME_NUM)) < 0) {
-                      snd_pcm_prepare(PCM_HANDLE);
-                      fprintf(stderr, "<<<<<<<<<<<<<<< Buffer Underrun >>>>>>>>>>>>>>>\n");
-                }               
-                if(index>=MAX_INDEX-1){
-                    s_max++;
-                    if(s_max>1000){
-                        s_max=0;
-                    }
-                    index = 0;
-
-                }else{
-                    index++;
-                }
+            printf("wirte to buffer index %d , timestamp %lld\n",index, get_tsf(&TSF_FD));
+            printf("frames len %lu\n",strlen(FRAME_LIST[index].frames));
+            #endif
+            len = strlen(FRAME_LIST[index].frames);
+            //len = len>MAX_FRAMES?MAX_FRAMES:len;
+            //FRAME_LIST[index].frames[len]='\0';
+            while ((ret = snd_pcm_writei(PCM_HANDLE, FRAME_LIST[index].frames, PCM_FRAME_NUM)) < 0) {
+                  snd_pcm_prepare(PCM_HANDLE);
+                  fprintf(stderr, "<<<<<<<<<<<<<<< Buffer Underrun >>>>>>>>>>>>>>>\n");
+            }               
+        	if(len>0){
+				memset(&FRAME_LIST[index].frames,0,len);
+			}
+            if(index>=MAX_INDEX-1){
+                index = 0;
+            }else{
+                index++;
             }
         }else{
             if(index>0){
@@ -140,7 +137,6 @@ void stop_write_pcm(){
 int send_to_socast(int socket, int idx, void *servaddr){
         char index[16];
         sprintf(index,"%d",idx);
-        // printf("sendto timestamp = %lld\n",getSystemTime());
         return sendto(socket, index, strlen(index), 0, (struct sockaddr*)servaddr, sizeof(struct sockaddr));
 }
 
@@ -218,7 +214,7 @@ void *request_data(void *msg){
             }
 
             if(FD_ISSET(sock_c, &readfds)){
-                bzero(&(FRAME_LIST[FRAME_INDEX].frames),MAX_FRAMES);
+                memset(&(FRAME_LIST[FRAME_INDEX].frames),0,MAX_FRAMES);
                 recv(sock_c, &FRAME_LIST[FRAME_INDEX], REC_BUF_LEN+1, 0);
                 if(FRAME_LIST[FRAME_INDEX].sequence>=FRAME_INDEX){
                     // write_to_buffer(FRAME_INDEX);
@@ -268,27 +264,15 @@ void *time_start(void *msg){
     printf("1  recv time = ");
     print_timestamp();
     #endif
-    struct timeval current_time;
-    // printf("recv seconds = %ld ,useconds = %ld\n",(long) RECV_CMD->current_t.tv_sec, (long)RECV_CMD->current_t.tv_usec);
 
-    gettimeofday(&current_time,NULL);
-    secends = (long)(RECV_CMD->current_t.tv_sec - current_time.tv_sec);
-    usec =  (long)(RECV_CMD->current_t.tv_usec - current_time.tv_usec);
-    if(secends>0){
-        if(usec<0){
-            secends = secends-1;
-            usec = usec+secends*1000000;
-        }
-    }
+	long msec = RECV_CMD->current_t-get_tsf(&TSF_FD);
+	printf("sleep ms = %ld\n",msec);
     #ifdef DEBUG
-    printf("secends = %ld ,usec = %ld\n",secends,usec);
-    printf("2  recv time = ");
     print_timestamp();
     #endif
     const struct timespec spec ={
-        .tv_sec = secends,
-        .tv_nsec = usec*1000
-
+        .tv_sec = 0,
+        .tv_nsec = msec*1000
     };
     #ifdef DEBUG
     printf("3  recv time = ");
@@ -318,7 +302,7 @@ void *listent_control_socket(void *msg){
     //close hsa_syslogd release 18879 port
     ///* allow multiple sockets to use the same PORT number */ 
 
-    bzero(&servaddr, sizeof(servaddr));
+    memset(&servaddr,0, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
     servaddr.sin_addr.s_addr= inet_addr(LISTEN_IP); 
     servaddr.sin_port=htons(PORT_C);  
@@ -344,7 +328,7 @@ void *listent_control_socket(void *msg){
     pthread_t start_write_p;
     RECV_CMD = malloc(sizeof(so_play_cmd));
     while(1){
-        bzero(rervBuffer, recvLen);
+        memset(rervBuffer,0, recvLen);
         length = recvfrom(sockfd, rervBuffer, recvLen, 0,(struct sockaddr *) &servaddr, &socklen);
         printf("length = %d\n",length);
         if (length <= 3)
@@ -354,15 +338,14 @@ void *listent_control_socket(void *msg){
             printf("recv buffer = %s\n",rervBuffer);
             so_play_cmd *tmp_cmd = (so_play_cmd *)rervBuffer;
             RECV_CMD->type = tmp_cmd->type;
-            RECV_CMD->current_t.tv_sec = tmp_cmd->current_t.tv_sec;
-            RECV_CMD->current_t.tv_usec = tmp_cmd->current_t.tv_usec;
+            RECV_CMD->current_t = tmp_cmd->current_t;
 
             if((RECV_CMD->type==CMD_START) && CURRENT_STATUS== CMD_STOP){
                 CURRENT_STATUS = CMD_START;
                 printf("start request\n");
                 //todo 根据 cmd->current_t 的时间戳来启动
                 start_request_data();
-                printf("recv seconds = %ld ,useconds = %ld\n",(long) RECV_CMD->current_t.tv_sec, (long)RECV_CMD->current_t.tv_usec);
+                printf("recv seconds = %ld ,useconds = %lld\n", RECV_CMD->current_t);
                 pthread_create(&start_write_p,NULL,time_start,NULL);
                 pthread_detach(start_write_p);
             }else{
@@ -473,12 +456,12 @@ int send_find_broadcast(){
         }
 
         if(FD_ISSET(brdcfd, &readfds)){
-            bzero(buffer,sizeof(buffer));
+            memset(buffer,0,sizeof(buffer));
             int len = recv(brdcfd, buffer, sizeof(buffer), 0);
             if(len<0){
                 continue;
             }
-            bzero(HOST_IP,sizeof(HOST_IP));
+            memset(HOST_IP,0,sizeof(HOST_IP));
             strncpy(HOST_IP,buffer,sizeof(buffer));
             printf("HOST_IP %s\n",HOST_IP);
             break;
@@ -515,6 +498,7 @@ int main(int argc,char *argv[]){
         printf("find device failed\n");
         return -1;
     }
+    TSF_FD = open("/dev/tsf",O_RDONLY);
 
     init_playback_p();
     //Thread2. 发送hostip 去获取数据,放入到FRAME_LIST中

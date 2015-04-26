@@ -8,7 +8,7 @@
 #include <sys/fcntl.h> 
 #include <alsa/asoundlib.h>  
 
-#define MAX_SIZE 16*1024
+#define MAX_SIZE 2*1024
  static char *device = "default";                        /* playback device */
 snd_output_t *output = NULL;
 unsigned char *buffer;   

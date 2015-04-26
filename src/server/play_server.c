@@ -16,14 +16,15 @@
 
 #define RATE 44100
 #define CHANNELS 2
-#define LATENCY 50000
+#define LATENCY 60000
 
 so_play_frame FRAME_LIST[MAX_INDEX];
 
 int IS_RUNNING = 0;
 
 int FRAME_INDEX = 0;
-
+//读取tsf timestamp的文件句柄
+int TSF_FD = -1;
 
 snd_pcm_t *PCM_HANDLE;
 
@@ -52,7 +53,7 @@ void *read_record(void *msg){
   while(1){
     if(IS_RUNNING) {
       //当index == 0 等时候走一次时间戳的获取及校准
-      gettimeofday(&(FRAME_LIST[FRAME_INDEX].timestamp),NULL);
+      FRAME_LIST[FRAME_INDEX].timestamp=get_tsf(&TSF_FD);
       FRAME_LIST[FRAME_INDEX].sequence = FRAME_INDEX;
 
       bzero(FRAME_LIST[FRAME_INDEX].frames,MAX_FRAMES);
@@ -92,9 +93,6 @@ void stop_record(){
 }
 
 
-
-
-
 void *read_buffer(void *filename){
   // todo  1. 使用广播方式发送命令
   //2. 读取内容，解析放入LIST中
@@ -114,7 +112,7 @@ void *read_buffer(void *filename){
 
 
            bzero(&(FRAME_LIST[FRAME_INDEX].frames),MAX_FRAMES);
-           gettimeofday(&(FRAME_LIST[FRAME_INDEX].timestamp),NULL);
+           FRAME_LIST[FRAME_INDEX].timestamp=get_tsf(&TSF_FD);
 
           FRAME_LIST[FRAME_INDEX].sequence = FRAME_INDEX;
           // printf("frames p=%p\n",frame->frames);
@@ -177,7 +175,7 @@ void *process_request(void *msg){
              print_timestamp();
           }
           #ifdef DEBUG
-          printf("after send to request INDEX %d , %lu\n",FRAME_INDEX, getSystemTime());
+          printf("after send to request INDEX %d , %lld\n",FRAME_INDEX, get_tsf(&TSF_FD));
           #endif
 
           break;
@@ -228,7 +226,6 @@ void *data_server(void *msg){
   pthread_t request_p;
   for (; ;) {
         //data num_frames
-        // start = getSystemTime();
         // printf("start time: %lld ms\n", start);
         // printf("i=%d\n",i);
       if(IS_RUNNING){
@@ -236,7 +233,7 @@ void *data_server(void *msg){
         sp = malloc(sizeof(so_sp));//线程中释放process_request
         sp->from_len = socklen;
         #ifdef DEBUG
-        printf("before send to request INDEX %d , %lu\n",FRAME_INDEX, getSystemTime());
+        printf("before send to request INDEX %d , %lld\n",FRAME_INDEX, get_tsf(TSF_DF));
         #endif
         bzero(sp->msg,msg_len);
         length = recvfrom(SOCK_DATA_QUEST, sp->msg, msg_len, 0,(struct sockaddr *) &sp->from_server, &sp->from_len);
@@ -253,7 +250,6 @@ void *data_server(void *msg){
         nanosleep(&SLEEP_TIME,NULL);
       }
      
-      // end = getSystemTime();
       // printf("end time: %lld ms\n", end);
       // printf("rece buffer = %s timestamp = %d\n",cRecvBuf,0);
   }
@@ -393,6 +389,8 @@ void init_playback_r(){
 
 int main(int argc, char *argv[]) {
   
+  TSF_FD = open("/dev/tsf",O_RDONLY);
+
    //printf("2\n");
   pthread_t server_p,play_p,find_listen_broadcast_p;
   char *play="-p";
@@ -481,8 +479,7 @@ int main(int argc, char *argv[]) {
               //发送组播到其他speaker 开始播放
             printf(" start %d : ",CMD_START);
             play_cmd->type=CMD_START;
-            gettimeofday(&(play_cmd->current_t),NULL);
-            play_cmd->current_t.tv_usec = (play_cmd->current_t.tv_usec+40000);
+			play_cmd->current_t = get_tsf(&TSF_FD)+40000;
 
             //循环发送已经添加额客户端；
             int i_len=0;
@@ -510,7 +507,7 @@ int main(int argc, char *argv[]) {
               //发送组播到其他speaker 停止播放
             stop_record();
             play_cmd->type=CMD_STOP;
-            gettimeofday(&(play_cmd->current_t),NULL);
+			play_cmd->current_t = get_tsf(&TSF_FD);
 
             int i_len=0;
             for(i_len=0;i_len<SPEAKER_NUMS;i_len++){

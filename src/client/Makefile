@@ -10,6 +10,7 @@ INCLUDES=-I../include
 SOCAST_LDFLAGS=-pthread -lasound -ldl -lrt -lm
 
 CC=mipsel-openwrt-linux-gcc
+GCC=gcc
 
 CFLAGS=$(SOCAST_LDFLAGS) $(INCLUDES)
 
@@ -35,6 +36,9 @@ debug:$(OBJS)
 $(PROGRAME):$(OBJS)
 	#$(CC) $(LIBS_OBJS) -o $(PROGRAME) $(SRCS) $(CFLAGS)
 	$(CC) -o $(PROGRAME) $(SRCS) $(CFLAGS)
+
+gcc:$(OBJS)
+	$(GCC) -o $(PROGRAME) $(SRCS) $(CFLAGS)
 
 $(OBJS):$(HEADS)
            

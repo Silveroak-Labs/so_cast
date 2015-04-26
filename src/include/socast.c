@@ -1,5 +1,17 @@
 #include "socast.h"
 
+long unsigned long get_tsf(int *fd){
+  if(*fd >= 0){
+      char buffer[64];
+	  bzero(buffer,64);
+	  read(*fd,buffer,64);
+#ifdef DEBUG
+ 	  printf("read tsf = %s tsflen = %d\n",buffer,strlen(buffer));
+#endif
+      return strtoul(buffer, NULL, 16);
+   }
+   return 0;
+}
 
 long long getSystemTime() {
     struct timeb t;

@@ -40,7 +40,7 @@
 
 #define MAX_INDEX 1024*8
 
-#define MAX_FRAMES 2048 //传输 的数据大小，2048 比较稳定
+#define MAX_FRAMES 1024*2 //传输 的数据大小，2048 比较稳定
 
 #define OK_STR "OK"
 //定义命令字符串
@@ -57,7 +57,7 @@
 typedef struct so_play_frame_
 {
 	int sequence;
-	struct timeval timestamp;
+	long long timestamp;
 	unsigned char frames[MAX_FRAMES];
 	/* data */
 } so_play_frame;
@@ -65,7 +65,7 @@ typedef struct so_play_frame_
 typedef struct so_play_cmd_
 {
 	int type;  //1.start 2.stop
-	struct timeval current_t;
+	long long current_t;
 
 } so_play_cmd;
 
@@ -103,6 +103,8 @@ int get_network_io(so_network_io *buffer[MAXINTERFACES]);
 int get_ip(char *name,struct ifreq *ifr);
 
 void Die(char *mess);
+
+long unsigned long get_tsf(int *fd);
 
 extern so_play_frame FRAME_LIST[MAX_INDEX];
 
