@@ -99,13 +99,11 @@ void *write_to_buffer(void *msg){
             len = strlen(FRAME_LIST[index].frames);
             //len = len>MAX_FRAMES?MAX_FRAMES:len;
             //FRAME_LIST[index].frames[len]='\0';
-            while ((ret = snd_pcm_writei(PCM_HANDLE, FRAME_LIST[index].frames, PCM_FRAME_NUM)) < 0) {
+            if ((ret = snd_pcm_writei(PCM_HANDLE, FRAME_LIST[index].frames, PCM_FRAME_NUM)) < 0) {
                   snd_pcm_prepare(PCM_HANDLE);
                   fprintf(stderr, "<<<<<<<<<<<<<<< Buffer Underrun >>>>>>>>>>>>>>>\n");
             }               
-        	if(len>0){
-				memset(&FRAME_LIST[index].frames,0,len);
-			}
+			memset(FRAME_LIST[index].frames,0,MAX_FRAMES);
             if(index>=MAX_INDEX-1){
                 index = 0;
             }else{
@@ -345,7 +343,7 @@ void *listent_control_socket(void *msg){
                 printf("start request\n");
                 //todo 根据 cmd->current_t 的时间戳来启动
                 start_request_data();
-                printf("recv seconds = %ld ,useconds = %lld\n", RECV_CMD->current_t);
+                printf("recv seconds = %ld \n", RECV_CMD->current_t);
                 pthread_create(&start_write_p,NULL,time_start,NULL);
                 pthread_detach(start_write_p);
             }else{

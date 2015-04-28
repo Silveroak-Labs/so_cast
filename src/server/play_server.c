@@ -26,7 +26,6 @@ int FRAME_INDEX = 0;
 //读取tsf timestamp的文件句柄
 int TSF_FD = -1;
 
-snd_pcm_t *PCM_HANDLE;
 
 static char *PCM_DEVICE = "default";                        /* playback device */
 
@@ -45,19 +44,29 @@ socklen_t socklen = sizeof(struct sockaddr_in);
 int S_MAX = 0;
 
 
+char SERVER_IP[128];
+int SOCK_CONTROL;
+
+snd_pcm_t *PCM_HANDLE;
+
+so_speaker CLIENT_SPEAKER[10];
+int SPEAKER_NUMS = sizeof(CLIENT_SPEAKER)/sizeof(so_speaker);
+
 void *read_record(void *msg){
   printf("start record \n");
+  FRAME_INDEX=0;
+  open_and_set_pcm(&PCM_HANDLE,PCM_DEVICE,SND_PCM_STREAM_CAPTURE,SND_PCM_FORMAT_S16_LE,SND_PCM_ACCESS_RW_INTERLEAVED,RATE,CHANNELS,LATENCY,PCM_FRAME_NUM,FRAME_LIST[0].frames); 
   
   int ret;
-  FRAME_INDEX=0;
   while(1){
-    if(IS_RUNNING) {
+    //if(IS_RUNNING) {
       //当index == 0 等时候走一次时间戳的获取及校准
       FRAME_LIST[FRAME_INDEX].timestamp=get_tsf(&TSF_FD);
       FRAME_LIST[FRAME_INDEX].sequence = FRAME_INDEX;
-
-      bzero(FRAME_LIST[FRAME_INDEX].frames,MAX_FRAMES);
-      ret = snd_pcm_readi(PCM_HANDLE, FRAME_LIST[FRAME_INDEX].frames,PCM_FRAME_NUM); 
+      memset(FRAME_LIST[FRAME_INDEX].frames,0,MAX_FRAMES);
+       do {
+            ret = snd_pcm_readi(PCM_HANDLE, FRAME_LIST[FRAME_INDEX].frames,PCM_FRAME_NUM); 
+	    } while (ret == -EAGAIN);
       if (ret == -EPIPE) {  
           /* EPIPE means overrun */  
           fprintf(stderr, "overrun occurred\n");  
@@ -65,25 +74,46 @@ void *read_record(void *msg){
           continue;
       } else if (ret < 0) {  
           fprintf(stderr,  
-            "error from read: %s\n",  
+            "ret = %d ,error from read: %s\n", ret,
             snd_strerror(ret)); 
-            snd_pcm_prepare(PCM_HANDLE);  
+            //snd_pcm_prepare(PCM_HANDLE);  
           continue;
       } else if (ret != (int)PCM_FRAME_NUM) {  
           fprintf(stderr, "short read, read %d frames\n", ret);  
+		  continue;
       }  
+
       if( FRAME_INDEX >= MAX_INDEX-1){
         S_MAX++;
         FRAME_INDEX=0;
       } else{
         FRAME_INDEX++;
       }
-    }else{
-            nanosleep(&SLEEP_TIME,NULL);
-    }
+    //}else{
+     //       nanosleep(&SLEEP_TIME,NULL);
+   // }
   }
+  close_pcm(PCM_HANDLE);
+  close_playback(PCM_HANDLE);
   return NULL;
 }
+void send_client(so_play_cmd *play_cmd){
+     int i_len=0;
+     struct sockaddr_in send_addr;
+     int sock_send_to;
+     if ((sock_send_to=socket(AF_INET,SOCK_DGRAM,0)) < 0)   
+     {  
+          perror("socket");  
+		  return;
+     }  
+     for(i_len=0;i_len<SPEAKER_NUMS;i_len++){
+          if(CLIENT_SPEAKER[i_len].addr_len){
+            send_addr.sin_addr.s_addr=CLIENT_SPEAKER[i_len].address.sin_addr.s_addr; 
+            sendto(sock_send_to,play_cmd,sizeof(so_play_cmd),0,(struct sockaddr *)&CLIENT_SPEAKER[i_len].address,CLIENT_SPEAKER[i_len].addr_len);
+          }
+     }
+}
+
 void start_record(){
   FRAME_INDEX = 0;
   IS_RUNNING = 1;
@@ -262,11 +292,6 @@ void *data_server(void *msg){
   return NULL;
 }
 
-char SERVER_IP[128];
-int SOCK_CONTROL;
-
-so_speaker CLIENT_SPEAKER[10];
-int SPEAKER_NUMS = sizeof(CLIENT_SPEAKER)/sizeof(so_speaker);
 //监听广播地址，返回ip地址给客户端
 void *listen_broadcast_find(void *msg){
     int SOCK_CONTROL;
@@ -378,13 +403,12 @@ void init_playback_r(){
                                   CHANNELS,
                                   RATE,
                                   1,
-                                  LATENCY)) < 0) {   /* 0.5sec */
+                                  LATENCY)) < 0) {   
             printf("Playback open error: %s\n", snd_strerror(err));
             // exit(EXIT_FAILURE);
     }
     //open audio file
     int ret;
-
 }
 
 int main(int argc, char *argv[]) {
@@ -427,7 +451,7 @@ int main(int argc, char *argv[]) {
     if(strncmp(argv[2],record,2)==0){
         //录加播放
       type = 2;
-      init_playback_r();
+      //init_playback_r();
       printf("type 2\n");
       pthread_create(&play_p,NULL,read_record,NULL);  
       pthread_detach(play_p);
@@ -448,15 +472,6 @@ int main(int argc, char *argv[]) {
 
  //初始化发送命令的socket
 
- int sock_send_to;
- struct sockaddr_in send_addr;
- socklen_t send_addr_len = sizeof(struct sockaddr_in);
-
-  if ((sock_send_to=socket(AF_INET,SOCK_DGRAM,0)) < 0)   
-  {  
-      perror("socket");  
-      exit(1);  
-  }  
    
   while(1){
       bzero(buf,1024);
@@ -482,17 +497,7 @@ int main(int argc, char *argv[]) {
 			play_cmd->current_t = get_tsf(&TSF_FD)+40000;
 
             //循环发送已经添加额客户端；
-            int i_len=0;
-            for(i_len=0;i_len<SPEAKER_NUMS;i_len++){
-                int slen ;
-                if(CLIENT_SPEAKER[i_len].addr_len){
-                  send_addr.sin_addr.s_addr=CLIENT_SPEAKER[i_len].address.sin_addr.s_addr; 
-                  printf("ip %s %d\n",inet_ntoa(CLIENT_SPEAKER[i_len].address.sin_addr),CLIENT_SPEAKER[i_len].address.sin_port);
-                  slen = sendto(sock_send_to,play_cmd,sizeof(so_play_cmd),0,(struct sockaddr *)&CLIENT_SPEAKER[i_len].address,CLIENT_SPEAKER[i_len].addr_len);
-                  printf("sendto len = %d\n",slen);
-                }
-            }
-
+			send_client(play_cmd);
 
             FRAME_INDEX=0;
             if(type==1){
@@ -507,16 +512,9 @@ int main(int argc, char *argv[]) {
               //发送组播到其他speaker 停止播放
             stop_record();
             play_cmd->type=CMD_STOP;
-			play_cmd->current_t = get_tsf(&TSF_FD);
-
-            int i_len=0;
-            for(i_len=0;i_len<SPEAKER_NUMS;i_len++){
-                if(CLIENT_SPEAKER[i_len].addr_len){
-                  sendto(sock_send_to,play_cmd,sizeof(so_play_cmd),0,(struct sockaddr *)&CLIENT_SPEAKER[i_len].address,CLIENT_SPEAKER[i_len].addr_len);
-                }
-            }
+	        play_cmd->current_t = get_tsf(&TSF_FD);
+			send_client(play_cmd);
             printf("STOP %d\n",CMD_STOP);
-
           }else{
             printf("error\n");
           }
@@ -524,7 +522,6 @@ int main(int argc, char *argv[]) {
       }
   }
   free(ifr_localhost);
-  close_playback(PCM_HANDLE);
   return 0;
 }
 

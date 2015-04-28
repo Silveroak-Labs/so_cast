@@ -346,6 +346,7 @@ long readbuf(snd_pcm_t *handle, char *buf, long len, size_t *frames, size_t *max
 	if (!block) {
 		do {
 			r = snd_pcm_readi(handle, buf, len);
+			printf("r = %d\n",r);
 		} while (r == -EAGAIN);
 		if (r > 0) {
 			*frames += r;
@@ -357,6 +358,7 @@ long readbuf(snd_pcm_t *handle, char *buf, long len, size_t *frames, size_t *max
 		int frame_bytes = (snd_pcm_format_width(format) / 8) * channels;
 		do {
 			r = snd_pcm_readi(handle, buf, len);
+			printf("2r = %d\n",r);
 			if (r > 0) {
 				buf += r * frame_bytes;
 				len -= r;

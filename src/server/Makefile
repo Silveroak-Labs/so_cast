@@ -11,7 +11,7 @@ GCC=gcc
 CFLAGS=$(SOCAST_LDFLAGS) $(INCLUDES)
 
 HEADS=$(LOCAL_I)/socast.h
-SRCS=play_server.c $(LOCAL_I)/socast.c
+SRCS=play_server.c $(LOCAL_I)/socast.c $(LOCAL_I)/ialsalib.c
 
 OBJS=$(SRCS:.c=.o)
 

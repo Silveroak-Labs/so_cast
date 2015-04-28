@@ -58,7 +58,7 @@ typedef struct so_play_frame_
 {
 	int sequence;
 	long long timestamp;
-	unsigned char frames[MAX_FRAMES];
+	char frames[MAX_FRAMES];
 	/* data */
 } so_play_frame;
 
@@ -106,7 +106,11 @@ void Die(char *mess);
 
 long unsigned long get_tsf(int *fd);
 
+int open_and_set_pcm(snd_pcm_t **chandle,char *cdevice,snd_pcm_stream_t stream,snd_pcm_format_t format,snd_pcm_access_t access,int rate,int channels,int latency,int frame_num,char *buffer);
+void close_pcm(snd_pcm_t *channel);
+
 extern so_play_frame FRAME_LIST[MAX_INDEX];
+
 
 
 #endif  // _SOCAST_INCLUDE_

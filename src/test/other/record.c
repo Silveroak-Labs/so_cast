@@ -3,8 +3,8 @@
 #include <sys/fcntl.h> 
 #include <alsa/asoundlib.h>  
 
-#define MAX_SIZE 512 
-static char *device = "default";                        /* playback device */
+#define MAX_SIZE 1024*16 
+static char *device = "hw:0,0";                        /* playback device */
 snd_output_t *output = NULL;
 
 int main()  
@@ -18,7 +18,7 @@ int main()
         snd_pcm_uframes_t frames;
         snd_pcm_hw_params_t *params; 
 
-        if ((err = snd_pcm_open(&handle, device, SND_PCM_STREAM_CAPTURE, 0)) < 0) {
+        if ((err = snd_pcm_open(&handle, "default", SND_PCM_STREAM_CAPTURE, 0)) < 0) {
                 printf("Playback open error: %s\n", snd_strerror(err));
                 exit(EXIT_FAILURE);
         }
@@ -33,8 +33,8 @@ int main()
         unsigned int latency;
         int dir;
         int rc;
-        val = 32000;
-        latency = 10000;
+        val = 48000;
+        latency = 500000;
 
         frames = MAX_SIZE/4;
 
@@ -94,6 +94,7 @@ int main()
         for (i = 0; 1; i++) {
             //data num_frames
             ret = snd_pcm_readi(handle, buffer, frames); 
+			printf("ret = %d\n",ret);
             if (ret == -EPIPE) {  
                 /* EPIPE means overrun */  
                 fprintf(stderr, "overrun occurred\n");  
@@ -106,10 +107,12 @@ int main()
             } else if (ret != (int)frames) {  
                 fprintf(stderr, "short read, read %d frames\n", ret);  
             }  
-            while((ret = snd_pcm_writei(handle_play, buffer, frames)) < 0){
-              snd_pcm_prepare(handle_play);
-              printf("error from writei: %s\n", snd_strerror(ret));    
-            }
+            //while((ret = snd_pcm_writei(handle_play, buffer, frames)) < 0){
+            //  snd_pcm_prepare(handle_play);
+            //  printf("error from writei: %s\n", snd_strerror(ret));    
+            //}
+			//
+			//
         }
         snd_pcm_drain(handle); 
         snd_pcm_close(handle);
