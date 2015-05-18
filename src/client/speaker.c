@@ -99,10 +99,18 @@ void *write_to_buffer(void *msg){
             len = strlen(FRAME_LIST[index].frames);
             //len = len>MAX_FRAMES?MAX_FRAMES:len;
             //FRAME_LIST[index].frames[len]='\0';
-            if ((ret = snd_pcm_writei(PCM_HANDLE, FRAME_LIST[index].frames, PCM_FRAME_NUM)) < 0) {
+            ret = snd_pcm_writei(PCM_HANDLE, FRAME_LIST[index].frames, PCM_FRAME_NUM);
+		    if (ret == -EPIPE) {
+		    	 printf("<<<<<<<<<<<<<< Buffer Underrun >>>>>>>>>>>>>>>>> len = %d\n",len);
+                 snd_pcm_prepare(PCM_HANDLE);
+				 index++;
+		    }
+		/*	snd_pcm_recover(PCM_HANDLE,ret,1);
+			if(ret<0){
                   snd_pcm_prepare(PCM_HANDLE);
-                  fprintf(stderr, "<<<<<<<<<<<<<<< Buffer Underrun >>>>>>>>>>>>>>>\n");
+                  //fprintf(stderr, "<<<<<<<<<<<<<<< Buffer Underrun >>>>>>>>>>>>>>>\n");
             }               
+			*/
 			memset(FRAME_LIST[index].frames,0,MAX_FRAMES);
             if(index>=MAX_INDEX-1){
                 index = 0;

@@ -59,39 +59,34 @@ void *read_record(void *msg){
   
   int ret;
   while(1){
-    //if(IS_RUNNING) {
       //当index == 0 等时候走一次时间戳的获取及校准
       FRAME_LIST[FRAME_INDEX].timestamp=get_tsf(&TSF_FD);
       FRAME_LIST[FRAME_INDEX].sequence = FRAME_INDEX;
       memset(FRAME_LIST[FRAME_INDEX].frames,0,MAX_FRAMES);
-       do {
-            ret = snd_pcm_readi(PCM_HANDLE, FRAME_LIST[FRAME_INDEX].frames,PCM_FRAME_NUM); 
-	    } while (ret == -EAGAIN);
-      if (ret == -EPIPE) {  
+      ret = snd_pcm_readi(PCM_HANDLE, FRAME_LIST[FRAME_INDEX].frames,PCM_FRAME_NUM); 
+     if(IS_RUNNING){
+       if( FRAME_INDEX >= MAX_INDEX-1){
+        S_MAX++;
+        FRAME_INDEX=0;
+       } else{
+        FRAME_INDEX++;
+       }
+     }
+     if (ret == -EPIPE) {  
           /* EPIPE means overrun */  
           fprintf(stderr, "overrun occurred\n");  
           snd_pcm_prepare(PCM_HANDLE);  
           continue;
-      } else if (ret < 0) {  
+     } else if (ret < 0) {  
           fprintf(stderr,  
             "ret = %d ,error from read: %s\n", ret,
             snd_strerror(ret)); 
             //snd_pcm_prepare(PCM_HANDLE);  
           continue;
-      } else if (ret != (int)PCM_FRAME_NUM) {  
+     } else if (ret != (int)PCM_FRAME_NUM) {  
           fprintf(stderr, "short read, read %d frames\n", ret);  
 		  continue;
-      }  
-
-      if( FRAME_INDEX >= MAX_INDEX-1){
-        S_MAX++;
-        FRAME_INDEX=0;
-      } else{
-        FRAME_INDEX++;
-      }
-    //}else{
-     //       nanosleep(&SLEEP_TIME,NULL);
-   // }
+     }  
   }
   close_pcm(PCM_HANDLE);
   close_playback(PCM_HANDLE);
@@ -494,7 +489,7 @@ int main(int argc, char *argv[]) {
               //发送组播到其他speaker 开始播放
             printf(" start %d : ",CMD_START);
             play_cmd->type=CMD_START;
-			play_cmd->current_t = get_tsf(&TSF_FD)+40000;
+			play_cmd->current_t = get_tsf(&TSF_FD)+100000;
 
             //循环发送已经添加额客户端；
 			send_client(play_cmd);

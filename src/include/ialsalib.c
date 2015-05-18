@@ -238,7 +238,6 @@ int open_and_set_pcm(snd_pcm_t **chandle,char *cdevice,snd_pcm_stream_t stream,s
 		fprintf(stderr, "set params failed\n");
 	    return -2;	
 	}
-	printf("1\n");
 	if ((err = snd_pcm_set_params(*chandle,
 	     format,
          access,
@@ -250,18 +249,15 @@ int open_and_set_pcm(snd_pcm_t **chandle,char *cdevice,snd_pcm_stream_t stream,s
 	    return -3;	
 	}
 
-	printf("2\n");
 	if (snd_pcm_format_set_silence(format, buffer, frame_num*channels) < 0) {
 		fprintf(stderr, "silence error\n");
 	    return -4;	
 	}
 
-	printf("3\n");
 	if ((err = snd_pcm_start(*chandle)) < 0) {
 		printf("Go error: %s\n", snd_strerror(err));
 	    return -5;	
 	}
-	printf("4\n");
 	return 0;
 
 }
@@ -270,8 +266,7 @@ void close_pcm(snd_pcm_t *chandle){
 	snd_pcm_hw_free(chandle);
 	snd_pcm_close(chandle);
 }
-
-/*
+/**
 int main(int argc, char *argv[])
 {
 	
@@ -296,7 +291,7 @@ int main(int argc, char *argv[])
 
 
 	printf("start read\n");
-	while(j<1000){
+	while(j<10000){
 		bzero(buffer,buffer_size);
 	    do {
 	      	r = snd_pcm_readi(chandle, buffer, frame_num);
@@ -314,5 +309,4 @@ int main(int argc, char *argv[])
     close_pcm(chandle);	
 	return 0;
 }
-
-*/
+**/
